@@ -1,0 +1,70 @@
+# --- Umgebung & Zugangsdaten: nie einchecken ---------------------------------
+# .env (Beispielwerte) und .env.test werden eingecheckt, alles andere nicht
+/.env.local
+/.env.local.php
+/.env.*.local
+/.env.dev
+/.env.prod
+/config/secrets/*/*.decrypt.private.php
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+/auth.json
+
+# --- Server-Zugang (Host, Benutzer) ---------------------------------------------
+/.vscode/
+/.idea/
+/.fleet/
+*.sublime-workspace
+.project
+.settings/
+.DS_Store
+Thumbs.db
+
+# --- KI-Werkzeuge & interne Entwurfsdokumente ------------------------------------
+/.claude/
+/CLAUDE.md
+/.spec/
+
+# --- Symfony / PHP -----------------------------------------------------------------
+/var/
+/vendor/
+/public/bundles/
+/phpunit.xml
+/.phpunit.cache/
+/.php-cs-fixer.php
+/.php-cs-fixer.cache
+/.phpstan.cache/
+
+# --- Node / Build --------------------------------------------------------------
+/node_modules/
+/public/build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# --- Hochgeladene/erzeugte Bilder sind Daten, kein Code -----------------------------
+/public/media/*
+!/public/media/.gitkeep
+
+# --- Tests -------------------------------------------------------------------------
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage/
+
+# --- Dumps, Logs, Backups --------------------------------------------------------
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+*.log
+*.orig
+*.rej
+*~
+*.swp
+*.zip

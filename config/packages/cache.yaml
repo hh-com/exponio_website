@@ -1,0 +1,20 @@
+framework:
+    cache:
+        # Eindeutiger Präfix, damit sich mehrere Installationen auf einem Server nicht stören
+        prefix_seed: exponio/website
+
+        # "cache.app" liegt im Dateisystem (var/cache/<env>/pools). Mit APCu ist es schneller:
+        #app: cache.adapter.apcu
+        pools:
+            # Zähler, Facetten, Sitemaps, Sprachlisten … – Tag "content", geleert bei jeder Änderung
+            content.cache:
+                adapter: cache.app
+                tags: true
+
+when@test:
+    framework:
+        cache:
+            pools:
+                content.cache:
+                    adapter: cache.adapter.array
+                    tags: true

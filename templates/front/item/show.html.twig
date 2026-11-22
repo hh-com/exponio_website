@@ -1,0 +1,168 @@
+{% extends 'base.html.twig' %}
+
+{% set locale = app.request.locale %}
+{% set title = item.title(locale) %}
+{% set description = item.description(locale) %}
+{% set fallback = fallback_lang(item) %}
+{% set canonical = item_url(item) %}
+{% set mainImage = item.mainImage %}
+{% set modified = item.updatedAt %}
+{% for translation in item.translations %}{% if translation.updatedAt > modified %}{% set modified = translation.updatedAt %}{% endif %}{% endfor %}
+
+{% block title %}{{ title }} · {{ site().siteName }}{% endblock %}
+{% block description %}{{ item.metaDescription(locale) ?: (description ? description|striptags|slice(0, 155) : title) }}{% endblock %}
+{% block og %}
+    <meta property="og:type" content="article">
+    <meta property="og:image" content="{{ mainImage ? absolute_url(img(mainImage, null)) : absolute_url(brand('og')) }}">
+    {% if mainImage and mainImage.alt(locale) %}<meta property="og:image:alt" content="{{ mainImage.alt(locale) }}">{% endif %}
+{% endblock %}
+
+{% block head %}
+    {% if mainImage %}<link rel="preload" as="image" href="{{ img(mainImage, 800) }}" imagesrcset="{{ img(mainImage, 800) }} 800w, {{ img(mainImage, null) }} 2000w" imagesizes="(min-width: 1024px) 55vw, 100vw" fetchpriority="high">{% endif %}
+    {{ json_ld({
+        '@type': 'ItemPage',
+        url: absolute_url(canonical),
+        inLanguage: locale,
+        dateModified: modified|date('c'),
+        mainEntity: {
+            '@type': 'CreativeWork',
+            name: title,
+            description: description,
+            identifier: '#' ~ item.id,
+            image: item.images|map(i => absolute_url(img(i, null)))|filter(u => u),
+            dateCreated: item.year ? (item.year ~ '') : null,
+            genre: item.area ? item.area.name(locale) : null,
+            spatialCoverage: item.category ? {'@type': 'Place', name: item.category.pathLabel(locale)} : null,
+            about: item.topics|map(t => {'@type': 'Thing', name: t.name(locale)}),
+            isPartOf: item.series(locale) ? {'@type': 'CreativeWorkSeries', name: item.series(locale)} : null,
+            additionalProperty: item.sortedAttributes|map(a => {'@type': 'PropertyValue', name: a.definition.label(locale), value: a|attr_value}),
+            dateModified: modified|date('c'),
+        },
+    }) }}
+{% endblock %}
+
+{% block body %}
+    {% set crumbs = [{label: 'nav.catalog'|trans, url: path('catalog')}] %}
+    {% if item.area %}{% set crumbs = crumbs|merge([{label: item.area.name(locale), url: area_url(item.area)}]) %}{% endif %}
+    {% if item.category %}
+        {% for node in item.category.path %}
+            {% set crumbs = crumbs|merge([{label: node.name(locale), url: category_url(node)}]) %}
+        {% endfor %}
+    {% endif %}
+    {% set crumbs = crumbs|merge([{label: title, url: null}]) %}
+
+    {% if preview %}
+        <div class="border-b border-line bg-warning-soft">
+            <div class="container-page flex flex-wrap items-center justify-between gap-3 py-3 text-sm text-warning">
+                <span>{{ icon('info', 'size-4 inline -mt-0.5') }} {{ 'item.preview'|trans({'%status%': item.status|trans}) }}</span>
+                <a href="{{ path('admin_item_edit', {entityId: item.id}) }}" class="font-semibold underline">{{ 'item.edit'|trans }}</a>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="container-page pt-6 sm:pt-8">
+        {{ include('front/partials/_breadcrumbs.html.twig', {breadcrumbs: crumbs}) }}
+
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14">
+            {# ---------- Galerie ---------- #}
+            <div class="lg:sticky lg:top-24 lg:self-start">
+                {% set images = item.images|map(i => {
+                    full: img(i, null), medium: img(i, 800), thumb: img(i, 400), width: i.width, height: i.height,
+                    alt: i.alt(locale) ?? title, side: i.side ? i.side|trans : null,
+                }) %}
+                <div data-island="item-gallery" data-props="{{ {images: images, title: title}|json_encode|e('html_attr') }}">
+                    <figure class="mount aspect-square rounded-3xl p-6 ring-1 ring-line/70 sm:p-10">
+                        {% if mainImage %}
+                            <img src="{{ img(mainImage, 800) }}" srcset="{{ img(mainImage, 800) }} 800w, {{ img(mainImage, null) }} 2000w" sizes="(min-width: 1024px) 55vw, 100vw" width="{{ mainImage.width }}" height="{{ mainImage.height }}" alt="{{ mainImage.alt(locale) ?? title }}" fetchpriority="high">
+                        {% else %}
+                            <span class="text-muted">{{ icon(item.area.icon ?? 'stamp', 'size-20') }}</span>
+                        {% endif %}
+                    </figure>
+                </div>
+            </div>
+
+            {# ---------- Infos ---------- #}
+            <div class="min-w-0" {% if fallback %}lang="{{ fallback }}"{% endif %}>
+                {% if item.area %}
+                    <a href="{{ area_url(item.area) }}" class="badge bg-ink text-white hover:bg-brand-600">{{ icon(item.area.icon, 'size-3.5') }} {{ item.area.name(locale) }}</a>
+                {% endif %}
+
+                <h1 class="mt-3 text-3xl leading-tight text-balance sm:text-4xl">{{ title }}</h1>
+                {% set sub = [item.category ? item.category.pathLabel(locale) : null, item.yearLabel]|filter(v => v) %}
+                {% if sub %}<p class="mt-2 text-lg text-muted">{{ sub|join(' · ') }}</p>{% endif %}
+
+                <div class="mt-6 flex flex-wrap items-center gap-3">
+                    <button type="button" data-watch="{{ item.id }}" data-watch-label="{{ 'item.watch'|trans }}" data-watched-label="{{ 'item.watched'|trans }}" aria-pressed="false"
+                            class="btn btn-secondary aria-pressed:bg-soft aria-pressed:[&_svg]:fill-current">
+                        <span class="text-heart">{{ icon('heart', 'size-5') }}</span> <span data-watch-text>{{ 'item.watch'|trans }}</span>
+                    </button>
+                </div>
+
+                {% if item.estimateVisible %}
+                    <div class="card mt-6 p-5">
+                        <p class="text-sm text-muted">{{ 'item.estimate'|trans }}</p>
+                        <p class="font-display text-3xl text-info tabular-nums">{{ 'item.estimate_short'|trans({'%value%': item.catalogValue|money}) }}</p>
+                        <p class="mt-1 text-sm text-muted">{{ 'item.estimate_note'|trans }}</p>
+                    </div>
+                {% endif %}
+
+                {% if description %}
+                    <h2 class="mt-8 font-sans text-sm font-bold tracking-wide text-muted uppercase">{{ 'item.description'|trans }}</h2>
+                    <div class="mt-3 text-lg leading-relaxed text-pretty whitespace-pre-line">{{ description }}</div>
+                {% endif %}
+
+                {# Faktenblock – auch für Suchmaschinen und KI-Systeme gut lesbar #}
+                <h2 class="mt-8 font-sans text-sm font-bold tracking-wide text-muted uppercase">{{ 'item.details'|trans }}</h2>
+                <dl class="mt-3 divide-y divide-line overflow-hidden rounded-2xl bg-white text-[15px] ring-1 ring-line/70">
+                    {% if item.area %}{{ _self.row('item.area'|trans, item.area.name(locale)) }}{% endif %}
+                    {% if item.category %}
+                        <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 px-4 py-3">
+                            <dt class="text-muted">{{ 'item.region'|trans }}</dt>
+                            <dd class="font-semibold">
+                                {% for node in item.category.path %}<a href="{{ category_url(node) }}" class="link">{{ node.name(locale) }}</a>{% if not loop.last %} › {% endif %}{% endfor %}
+                            </dd>
+                        </div>
+                    {% endif %}
+                    {% if item.yearLabel %}{{ _self.row('item.year'|trans, item.yearLabel) }}{% endif %}
+                    {% if item.issueDate %}{{ _self.row('item.issue_date'|trans, item.issueDate|date_local) }}{% endif %}
+                    {% if item.series(locale) %}{{ _self.row('item.series'|trans, item.series(locale)) }}{% endif %}
+                    {% for attribute in item.sortedAttributes %}
+                        {{ _self.row(attribute.definition.label(locale), attribute|attr_value) }}
+                    {% endfor %}
+                    {% if item.defects(locale) %}{{ _self.row('item.defects'|trans, item.defects(locale)) }}{% endif %}
+                    {{ _self.row('item.number'|trans, '#' ~ item.id) }}
+                </dl>
+
+                {% if item.topics is not empty %}
+                    <h2 class="mt-8 font-sans text-sm font-bold tracking-wide text-muted uppercase">{{ 'item.topics'|trans }}</h2>
+                    <ul class="mt-3 flex flex-wrap gap-2">
+                        {% for topic in item.topics %}
+                            <li><a href="{{ topic_url(topic) }}" class="chip">{{ icon('tag', 'size-4') }} {{ topic.name(locale) }}</a></li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+
+                <p class="mt-8 text-sm text-muted">{{ 'common.updated'|trans }}: <time datetime="{{ modified|date('Y-m-d') }}">{{ modified|date_local }}</time></p>
+            </div>
+        </div>
+
+        {# ---------- Ähnliche Stücke ---------- #}
+        {% if similar is not empty %}
+            <section class="mt-16 sm:mt-20" aria-labelledby="similar-title">
+                <h2 id="similar-title" class="text-2xl sm:text-3xl">{{ 'item.similar'|trans }}</h2>
+                <ul class="-mx-4 mt-6 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-5 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+                    {% for other in similar %}
+                        <li class="w-[68%] shrink-0 snap-start sm:w-auto">{{ include('front/partials/_card.html.twig', {item: other}) }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+    </div>
+{% endblock %}
+
+{% macro row(label, value) %}
+    <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 px-4 py-3">
+        <dt class="text-muted">{{ label }}</dt>
+        <dd class="font-semibold break-words">{{ value }}</dd>
+    </div>
+{% endmacro %}

@@ -1,0 +1,9 @@
+{% extends '@EasyAdmin/page/content.html.twig' %}
+
+{% block content_title %}Prüfen & freigeben{% endblock %}
+
+{% block main %}
+    <div class="ea-not-prose" id="review-app" data-props="{{ props|json_encode|e('html_attr') }}">
+        <p>Lädt …</p>
+    </div>
+{% endblock %}

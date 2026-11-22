@@ -1,0 +1,56 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ title }}{% if result.page > 1 %} – {{ 'catalog.page'|trans({'%page%': result.page, '%pages%': result.pages}) }}{% endif %} · {{ settings.siteName }}{% endblock %}
+{% block description %}{{ intro ? intro|striptags|slice(0, 155) : parent() }}{% endblock %}
+
+{% block head %}
+    {{ json_ld({
+        '@type': 'CollectionPage',
+        name: title,
+        description: intro,
+        url: absolute_url(canonical),
+        inLanguage: app.request.locale,
+        mainEntity: {
+            '@type': 'ItemList',
+            numberOfItems: result.total,
+            itemListElement: result.items|map((item, i) => {'@type': 'ListItem', position: (result.page - 1) * site().itemsPerPage + i + 1, url: absolute_url(item_url(item)), name: item.title(app.request.locale)}),
+        },
+    }) }}
+{% endblock %}
+
+{% block body %}
+    <section class="border-b border-line/80 bg-soft">
+        <div class="container-page py-7 sm:py-10">
+            {{ include('front/partials/_breadcrumbs.html.twig') }}
+            <div class="flex items-start gap-4">
+                {% if icon is defined %}
+                    <span class="hidden size-14 shrink-0 place-items-center rounded-2xl bg-white text-ink ring-1 ring-line sm:grid">{{ icon(icon, 'size-7') }}</span>
+                {% endif %}
+                <div class="min-w-0" {% if entity is defined and fallback_lang(entity) %}lang="de"{% endif %}>
+                    <h1 class="text-3xl text-balance sm:text-4xl">{{ title }}</h1>
+                    {% if intro %}<p class="mt-2 max-w-2xl text-pretty whitespace-pre-line text-muted">{{ intro }}</p>{% endif %}
+                </div>
+            </div>
+
+            {% if subregions is defined and subregions is not empty %}
+                <div class="mt-6">
+                    <h2 class="sr-only">{{ 'catalog.subregions'|trans }}</h2>
+                    <ul class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-none sm:mx-0 sm:flex-wrap sm:px-0">
+                        {% for sub in subregions %}
+                            <li class="shrink-0">
+                                <a href="{{ category_url(sub) }}" class="chip">{{ sub.name(locale) }} <span class="text-xs text-muted tabular-nums">{{ regionCounts[sub.id] ?? 0 }}</span></a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <div class="container-page py-6 sm:py-8">
+        <div data-island="catalog-browser" data-props="{{ props|json_encode|e('html_attr') }}">
+            <p class="pb-5 text-sm text-muted">{{ 'vue.results'|trans({'%count%': result.total}) }}</p>
+            <div data-ssr-results>{{ resultsHtml|raw }}</div>
+        </div>
+    </div>
+{% endblock %}

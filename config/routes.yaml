@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../vendor/symfony/routing/Loader/schema/routing.schema.json
+
+# Öffentliche Website: /de/… mit deutschen Pfaden, alle anderen Sprachen unter /{_locale}/… mit
+# englischen Pfaden (siehe src/Routing/FrontRouteLoader.php)
+front:
+    resource:
+        path: ../src/Controller/Front/
+        namespace: App\Controller\Front
+    type: front
+
+# Routen ohne Sprachpräfix (Startseiten-Weiterleitung, Sitemaps, robots.txt, llms.txt)
+site:
+    resource:
+        path: ../src/Controller/Site/
+        namespace: App\Controller\Site
+    type: attribute
+
+# Backend: Login und JSON-API (die EasyAdmin-Routen lädt config/routes/easyadmin.yaml)
+admin:
+    resource:
+        path: ../src/Controller/Admin/
+        namespace: App\Controller\Admin
+    type: attribute

@@ -1,0 +1,20 @@
+{# Ergänzungen zum EasyAdmin-Formular-Theme #}
+
+{# Bild-Eintrag im Objekt-Formular: Vorschau neben Datei, Seite, Alt-Text und Position #}
+{% block item_image_widget %}
+    <div class="item-image-entry" style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+        {% if form.vars.data and form.vars.data.path %}
+            <a href="{{ asset(form.vars.data.relativePath) }}" target="_blank" rel="noopener" style="flex:none">
+                <img src="{{ asset(form.vars.data.relativePath(400)) }}" alt="" style="width:120px;height:120px;object-fit:contain;background:#f2ede2;border-radius:10px;padding:6px;border:1px solid var(--border-color, #e7e1d6)">
+            </a>
+        {% endif %}
+        <div style="flex:1;min-width:220px">
+            {{ form_row(form.file) }}
+            <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:1rem">
+                {{ form_row(form.side) }}
+                {{ form_row(form.alt) }}
+                {{ form_row(form.position) }}
+            </div>
+        </div>
+    </div>
+{% endblock %}

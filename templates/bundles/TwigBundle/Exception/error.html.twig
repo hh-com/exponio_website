@@ -1,0 +1,18 @@
+{% extends 'base.html.twig' %}
+
+{% set notFound = status_code in [404, 410] %}
+{% set noindex = true %}
+{% set safeLocale = app.request.locale in locales()|column('code') ? app.request.locale : 'de' %}
+{% block title %}{{ (notFound ? 'error.not_found_title' : 'error.generic_title')|trans }} · {{ site().siteName }}{% endblock %}
+
+{% block body %}
+    <section class="container-page flex flex-col items-center py-20 text-center sm:py-28">
+        <span class="mb-8 grid size-24 place-items-center rounded-3xl bg-white font-display text-3xl text-ink shadow-card ring-1 ring-line">{{ status_code }}</span>
+        <h1 class="text-3xl sm:text-4xl">{{ (notFound ? 'error.not_found_title' : 'error.generic_title')|trans }}</h1>
+        <p class="mt-3 max-w-md text-muted">{{ (notFound ? 'error.not_found_text' : 'error.generic_text')|trans }}</p>
+        <div class="mt-8 flex flex-wrap justify-center gap-3">
+            <a href="{{ path('home', {_locale: safeLocale}) }}" class="btn btn-primary">{{ 'common.back_home'|trans }}</a>
+            <a href="{{ path('catalog', {_locale: safeLocale}) }}" class="btn btn-secondary">{{ 'nav.catalog'|trans }}</a>
+        </div>
+    </section>
+{% endblock %}

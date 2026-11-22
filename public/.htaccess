@@ -1,0 +1,57 @@
+# Apache: alle Anfragen an Symfony (public/index.php), vorhandene Dateien direkt ausliefern
+DirectoryIndex index.php
+
+<IfModule mod_negotiation.c>
+    Options -MultiViews
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{REQUEST_URI}::$0 ^(/.+)/(.*)::\2$
+    RewriteRule .* - [E=BASE:%1]
+
+    RewriteCond %{HTTP:Authorization} .+
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%0]
+
+    RewriteCond %{ENV:REDIRECT_STATUS} =""
+    RewriteRule ^index\.php(?:/(.*)|$) %{ENV:BASE}/$1 [R=301,L]
+
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ %{ENV:BASE}/index.php [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    <IfModule mod_alias.c>
+        RedirectMatch 307 ^/$ /index.php/
+    </IfModule>
+</IfModule>
+
+# Dateien mit Hash im Namen (Build, Backend-Dateien von EasyAdmin, Bilder) ändern sich nie: ein Jahr cachen.
+# Standardlogo und Favicons (public/brand) einen Tag; ein eigenes Logo liegt unter media/ (Name mit Hash).
+<IfModule mod_headers.c>
+    <If "%{REQUEST_URI} =~ m#^/(build/assets|bundles/easyadmin|media)/#">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </If>
+    <ElseIf "%{REQUEST_URI} =~ m#^/brand/#">
+        Header set Cache-Control "public, max-age=86400"
+    </ElseIf>
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>
+
+# Kompression für Text (HTML, CSS, JS, JSON, SVG, XML); Bilder und Schriften sind schon komprimiert
+<IfModule mod_brotli.c>
+    AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/css text/xml text/markdown application/javascript application/json application/xml application/manifest+json image/svg+xml
+</IfModule>
+<IfModule !mod_brotli.c>
+    <IfModule mod_deflate.c>
+        AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml text/markdown application/javascript application/json application/xml application/manifest+json image/svg+xml
+    </IfModule>
+</IfModule>
+
+<IfModule mod_mime.c>
+    AddType font/woff2 .woff2
+    AddType application/manifest+json .webmanifest
+</IfModule>

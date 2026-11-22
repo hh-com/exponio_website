@@ -1,0 +1,224 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/source-serif-4";
+@import "tailwindcss" source(none);
+
+@source "../../templates";
+@source "../front";
+@source "../lib";
+@source "../../src/Twig/Icons.php";
+
+/* ---------------------------------------------------------------------------
+   Design-Tokens (Farben, Abstände, Schrift).
+   Alle Textfarben erfüllen WCAG AA auf Hintergrund und Karten.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans", sans-serif;
+  --font-display: "Source Serif 4 Variable", ui-serif, Georgia, "Noto Serif", "Times New Roman", serif;
+
+  --color-paper: #f1efea;   /* Seitenhintergrund */
+  --color-soft: #f2ede2;    /* Sekundär: Flächen, Kacheln */
+  --color-sand: #e7e0d1;    /* Hover auf Flächen */
+  --color-line: #d9d2c3;    /* Rahmen */
+  --color-ink: #1a2a43;     /* Primär: Text, Überschriften, Buttons */
+  --color-muted: #545e70;   /* Nebentext (7,0:1 auf Papier) */
+
+  --color-brand-50: #eef1f6;
+  --color-brand-100: #dce3ee;
+  --color-brand-200: #b9c6db;
+  --color-brand-300: #8ea1c0;
+  --color-brand-500: #3a5378;
+  --color-brand-600: #2a3f60;
+  --color-brand-700: #1a2a43;
+  --color-brand-800: #142135;
+  --color-brand-900: #0e1726;
+
+  /* Akzent aus dem Logo – nur dekorativ (Linien, Overline in großer Schrift, Fokusrahmen nie) */
+  --color-logo-orange: #fe963f;
+  --color-logo-pink: #e2476f;
+  --color-logo-violet: #8a43b8;
+  --color-logo-blue: #418cc2;
+  --color-logo-teal: #2ddfa1;
+
+  /* Statusfarben (für Text abgedunkelt, damit der Kontrast reicht) */
+  --color-success: #23704c;
+  --color-success-soft: #e4f3ec;
+  --color-warning: #8a4a0c;
+  --color-warning-soft: #fcefdf;
+  --color-info: #1d5182;
+  --color-info-soft: #e4eef7;
+  --color-heart: #c22d55;
+
+  --shadow-card: 0 1px 2px rgb(26 42 67 / 0.05), 0 8px 24px -12px rgb(26 42 67 / 0.14);
+  --shadow-lift: 0 2px 6px rgb(26 42 67 / 0.08), 0 22px 44px -18px rgb(26 42 67 / 0.28);
+
+  --animate-fade-in: fade-in 0.25s ease-out both;
+  --animate-slide-up: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-padding-top: 5rem;
+  }
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+    font-weight: 650;
+  }
+  ::selection {
+    background: var(--color-brand-100);
+  }
+  /* deutlich sichtbarer Fokus (WCAG 2.4.7 / 2.4.11) – nie entfernen */
+  :focus-visible {
+    outline: 3px solid var(--color-info);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  [hidden] {
+    display: none !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Buttons: Pill-Form wie im Styleguide; Mindestgröße 44 px Höhe */
+  .btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 py-2.5 text-[15px] font-semibold whitespace-nowrap transition duration-150 select-none disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply bg-ink text-white shadow-sm hover:bg-brand-600 hover:shadow-lift active:bg-brand-800;
+  }
+  .btn-secondary {
+    @apply bg-white text-ink ring-2 ring-ink/80 ring-inset hover:bg-soft;
+  }
+  .btn-ghost {
+    @apply text-ink hover:bg-sand;
+  }
+  .btn-icon {
+    @apply inline-flex size-11 items-center justify-center rounded-full text-ink transition hover:bg-sand;
+  }
+
+  .chip {
+    @apply inline-flex min-h-10 items-center gap-2 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-ink ring-1 ring-line transition hover:bg-soft hover:ring-ink/40;
+  }
+  .chip-active {
+    @apply bg-ink text-white ring-ink hover:bg-brand-600 hover:text-white;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+
+  .card {
+    @apply rounded-2xl bg-white shadow-card ring-1 ring-line/70;
+  }
+  /* „Sammlung Online“-Overline: Verlauf aus dem Logo, groß und fett genug für 3:1 */
+  .eyebrow {
+    @apply inline-block text-sm font-bold tracking-[0.14em] uppercase;
+    color: var(--color-logo-pink);
+    background: linear-gradient(90deg, #b0401f, #c22d55 45%, #7a3aa8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .gradient-rule {
+    @apply h-1 w-16 rounded-full;
+    background: linear-gradient(90deg, var(--color-logo-orange), var(--color-logo-pink), var(--color-logo-violet), var(--color-logo-blue), var(--color-logo-teal));
+  }
+  .link {
+    @apply font-medium text-info underline decoration-info/40 underline-offset-4 transition hover:decoration-info;
+  }
+
+  .input {
+    @apply block min-h-11 w-full rounded-xl border-0 bg-white px-4 py-2.5 text-ink ring-1 ring-line transition placeholder:text-muted focus:ring-2 focus:ring-ink focus:outline-none;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-ink;
+  }
+
+  /* Logo-Kachel wie im Styleguide: dunkles, abgerundetes Quadrat */
+  .logo-tile {
+    @apply grid shrink-0 place-items-center overflow-hidden rounded-xl bg-[#1e2835] shadow-sm;
+  }
+
+  /* Foto auf hellem Grund, vollständig sichtbar */
+  .mount {
+    @apply relative flex items-center justify-center overflow-hidden bg-soft;
+    background-image: radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.85), transparent 62%);
+  }
+  .mount img {
+    @apply max-h-full max-w-full object-contain drop-shadow-[0_6px_12px_rgb(26_42_67/0.18)] transition duration-300;
+  }
+
+  /* Objektart-Kachel mit Symbol */
+  .area-tile {
+    @apply flex h-full flex-col items-center gap-3 rounded-2xl bg-white p-5 text-center ring-1 ring-line/70 transition hover:-translate-y-0.5 hover:shadow-lift;
+  }
+  .area-tile__icon {
+    @apply grid size-14 place-items-center rounded-2xl bg-brand-50 text-ink;
+  }
+
+  /* Inhaltsseiten (Impressum, Datenschutz, …) */
+  .prose-page {
+    @apply max-w-3xl text-base leading-relaxed text-ink;
+  }
+  .prose-page h2 {
+    @apply mt-10 mb-3 text-2xl text-ink;
+  }
+  .prose-page h3 {
+    @apply mt-8 mb-2 text-xl text-ink;
+  }
+  .prose-page p,
+  .prose-page ul,
+  .prose-page ol {
+    @apply mb-4;
+  }
+  .prose-page ul {
+    @apply list-disc ps-6;
+  }
+  .prose-page ol {
+    @apply list-decimal ps-6;
+  }
+  .prose-page a {
+    @apply text-info underline decoration-info/40 underline-offset-4 hover:decoration-info;
+  }
+  .prose-page strong {
+    @apply font-semibold text-ink;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Richtungs-Symbole (Pfeile) in Sprachen von rechts nach links spiegeln */
+[dir="rtl"] .flip-rtl {
+  transform: scaleX(-1);
+}

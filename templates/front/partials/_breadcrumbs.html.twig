@@ -1,0 +1,22 @@
+{# Variable: breadcrumbs = [{label, url|null}] #}
+<nav aria-label="{{ 'nav.breadcrumb'|trans }}" class="mb-4 overflow-x-auto scrollbar-none">
+    <ol class="flex items-center gap-1.5 text-sm whitespace-nowrap text-muted">
+        <li><a href="{{ path('home') }}" class="hover:text-ink hover:underline">{{ 'nav.home'|trans }}</a></li>
+        {% for crumb in breadcrumbs %}
+            <li class="flex items-center gap-1.5">
+                {{ icon('chevron-right', 'size-3.5 flip-rtl') }}
+                {% if crumb.url %}
+                    <a href="{{ crumb.url }}" class="hover:text-ink hover:underline">{{ crumb.label }}</a>
+                {% else %}
+                    <span aria-current="page" class="font-semibold text-ink">{{ crumb.label }}</span>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ol>
+</nav>
+{{ json_ld({
+    '@type': 'BreadcrumbList',
+    itemListElement: [{'@type': 'ListItem', position: 1, name: 'nav.home'|trans, item: url('home')}]|merge(
+        breadcrumbs|filter(c => c.url)|map((c, i) => {'@type': 'ListItem', position: i + 2, name: c.label, item: absolute_url(c.url)})
+    ),
+}) }}

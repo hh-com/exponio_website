@@ -1,0 +1,190 @@
+meta:
+    description: 'A private collection of stamps, covers, postal stationery and other collectibles – photographed, identified and clearly arranged by country and topic.'
+
+nav:
+    home: Home
+    main: Main navigation
+    breadcrumb: Breadcrumb
+    catalog: Catalogue
+    all_items: All items
+    areas: Item types
+    regions: Countries
+    topics: Topics
+    watchlist: Watchlist
+    contact: Contact
+    menu: Menu
+    close: Close
+    language: Language
+    languages: All languages
+    search_placeholder: 'Search: country, year, subject, catalogue no. …'
+    skip: Skip to content
+
+common:
+    yes: 'Yes'
+    no: 'No'
+    all: All
+    show_all: Show all
+    items: '{0} no items|{1} 1 item|]1,Inf[ %count% items'
+    back_home: Back to home
+    updated: Last updated
+
+home:
+    eyebrow: Collection online
+    browse: Browse the catalogue
+    featured: Selected items
+    latest: New in the collection
+    areas_title: Item types
+    regions_title: By country
+    topics_title: By topic
+    stats_items: Items
+    stats_regions: Countries
+    stats_years: Period
+    cta_title: Questions or remarks about the collection?
+    cta_text: Feel free to write to me – I am happy about additions, corrections and exchanging ideas with other collectors.
+    cta_button: Get in touch
+    empty: The collection is being set up – please come back soon.
+
+catalog:
+    title: Catalogue
+    search_title: 'Search for “%q%”'
+    subregions: Subdivisions
+    results_list: Results
+    no_results: No results
+    no_results_hint: Loosen the filters or try another search term.
+    page: 'Page %page% of %pages%'
+    pagination: Pages
+    prev: Previous
+    next: Next
+    regions_title: All countries
+    regions_intro: The collection by countries, regions and eras.
+    topics_title: All topics
+    topics_intro: Subjects and topics across all countries.
+    sort:
+        new: Newest first
+        year_asc: Year ascending
+        year_desc: Year descending
+        title: Title A–Z
+
+item:
+    details: Details
+    area: Item type
+    region: Country
+    year: Year
+    issue_date: Date of issue
+    series: Series / issue
+    topics: Topics
+    defects: Faults
+    estimate: Estimated value
+    estimate_short: 'approx. %value%'
+    estimate_note: Non-binding estimate – not an offer for sale.
+    number: Item no.
+    watch: Remember
+    watched: Remembered
+    similar: Similar items
+    description: Description
+    preview: 'Preview – this item is not published (status: %status%).'
+    edit: Edit in backend
+
+inquiry:
+    error_generic: Your message could not be processed. Please reload the page.
+    error_rate: Too many messages in a short time. Please try again later.
+    v_name: Please enter your name.
+    v_email: Please enter a valid email address.
+    v_message: Please write a short message (at least 10 characters).
+
+contact:
+    title: Contact
+    intro: Do you have questions about the collection, remarks on an item or would you like to exchange ideas? Write to me – I will get back to you as soon as possible.
+    direct: Directly by email
+
+watchlist:
+    title: Watchlist
+    intro: Your remembered items – stored only in this browser.
+
+languages:
+    title: Languages
+    intro: This website is available in several languages. The translations are created with the help of an AI.
+
+footer:
+    collection: Collection
+    info: Information
+    rights: All rights reserved.
+
+error:
+    not_found_title: Page not found
+    not_found_text: This page does not exist (any more). Perhaps you will find what you are looking for in the catalogue.
+    generic_title: Something went wrong
+    generic_text: Please try again later.
+
+enum:
+    item_status:
+        draft: Draft
+        review: To review
+        published: Published
+        archived: Archived
+    attribute_type:
+        text: Text
+        number: Number
+        select: Selection
+        boolean: Yes/No
+    inquiry_status:
+        new: New
+        answered: Answered
+        closed: Closed
+    scan_status:
+        imported: Imported
+        failed: Failed
+        merged: Merged as duplicate
+    image_side:
+        front: Front
+        back: Back
+        detail: Detail
+
+vue:
+    menu: Menu
+    filters: Filters
+    filter_area: Item type
+    filter_region: Country
+    filter_topic: Topic
+    filter_year: Period
+    year_from: from
+    year_to: to
+    reset: Reset all filters
+    show_results: 'Show %count% results'
+    results: '%count% results'
+    sort: Sort
+    search: Search
+    search_in_results: Search in results …
+    remove_filter: Remove filter
+    active_filters: Active filters
+    loading: Loading …
+    more: Show more
+    less: Show less
+    close: Close
+    expand: 'Show subdivisions of %name%'
+    suggest_items: Items
+    suggest_regions: Countries
+    suggest_topics: Topics
+    suggest_all: 'Show all %count% results'
+    suggest_none: No suggestions
+    gallery: Images
+    image: 'Image %n% of %total%'
+    prev: Previous image
+    next: Next image
+    zoom: Enlarge
+    zoom_hint: Click or press Enter to enlarge
+    form_name: Name
+    form_email: Email
+    form_message: Message
+    form_required: Required
+    form_privacy: 'I only use your details to answer your message. More in the <a href="%url%" class="link">privacy policy</a>.'
+    form_submit: Send message
+    form_sending: Sending …
+    form_success_title: Thank you!
+    form_success_text: Your message has arrived. I will get back to you as soon as possible.
+    form_error: The message could not be sent. Please try again later.
+    form_check: Please check the highlighted fields.
+    watch_empty: Your watchlist is still empty.
+    watch_empty_hint: Tap the heart on an item to collect it here.
+    watch_clear: Clear list
+    browse: Browse the catalogue

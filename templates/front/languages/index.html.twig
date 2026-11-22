@@ -1,0 +1,24 @@
+{% extends 'base.html.twig' %}
+
+{% set canonical = path('languages') %}
+{% block title %}{{ 'languages.title'|trans }} · {{ settings.siteName }}{% endblock %}
+{% block description %}{{ 'languages.intro'|trans }}{% endblock %}
+
+{% block body %}
+    {{ include('front/partials/_page_header.html.twig', {title: 'languages.title'|trans, intro: 'languages.intro'|trans, breadcrumbs: [{label: 'languages.title'|trans, url: null}]}) }}
+    <div class="container-page py-8 sm:py-12">
+        <ul class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {% for language in languages %}
+                <li>
+                    <a href="{{ path('languages', {_locale: language.code}) }}" hreflang="{{ language.code }}" class="card flex min-h-16 items-center gap-4 p-4 transition hover:shadow-lift {{ language.code == locale ? 'ring-2 ring-ink' }}" {% if language.code == locale %}aria-current="page"{% endif %}>
+                        <span class="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-sm font-bold text-ink uppercase">{{ language.code }}</span>
+                        <span class="min-w-0">
+                            <span class="block truncate text-lg font-semibold" lang="{{ language.code }}" dir="{{ language.dir }}">{{ language.nativeName }}</span>
+                            {% if language.code != locale %}<span class="block truncate text-sm text-muted">{{ language.code|language_label }}</span>{% endif %}
+                        </span>
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endblock %}

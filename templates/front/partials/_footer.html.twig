@@ -1,0 +1,38 @@
+{% set locale = app.request.locale %}
+<footer class="mt-24 bg-ink text-white">
+    <div class="container-page grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="sm:col-span-2">
+            <a href="{{ path('home') }}" class="inline-flex items-center gap-3">
+                <span class="logo-tile size-11 ring-1 ring-white/15"><img src="{{ brand('logo') }}" alt="" width="44" height="44" class="size-full" loading="lazy"></span>
+                <span class="font-display text-xl">{{ settings.siteName }}</span>
+            </a>
+            <div class="gradient-rule mt-5" aria-hidden="true"></div>
+            {% if settings.tagline(locale) %}<p class="mt-5 max-w-md text-[15px] text-white/85">{{ settings.tagline(locale) }}</p>{% endif %}
+            {% if settings.footerText(locale) %}<p class="mt-3 max-w-md text-[15px] whitespace-pre-line text-white/85">{{ settings.footerText(locale) }}</p>{% endif %}
+        </div>
+        <nav aria-labelledby="footer-collection">
+            <h2 id="footer-collection" class="font-sans text-sm font-bold tracking-wide text-white uppercase">{{ 'footer.collection'|trans }}</h2>
+            <ul class="mt-4 space-y-1 text-[15px]">
+                <li><a class="inline-flex min-h-8 items-center text-white/85 hover:text-white hover:underline" href="{{ path('catalog') }}">{{ 'nav.all_items'|trans }}</a></li>
+                {% for area in nav_areas() %}
+                    <li><a class="inline-flex min-h-8 items-center text-white/85 hover:text-white hover:underline" href="{{ area_url(area) }}">{{ area.name(locale) }}</a></li>
+                {% endfor %}
+                <li><a class="inline-flex min-h-8 items-center text-white/85 hover:text-white hover:underline" href="{{ path('regions') }}">{{ 'nav.regions'|trans }}</a></li>
+                <li><a class="inline-flex min-h-8 items-center text-white/85 hover:text-white hover:underline" href="{{ path('topics') }}">{{ 'nav.topics'|trans }}</a></li>
+            </ul>
+        </nav>
+        <nav aria-labelledby="footer-info">
+            <h2 id="footer-info" class="font-sans text-sm font-bold tracking-wide text-white uppercase">{{ 'footer.info'|trans }}</h2>
+            <ul class="mt-4 space-y-1 text-[15px]">
+                {% for page in footer_pages() %}
+                    <li><a class="inline-flex min-h-8 items-center text-white/85 hover:text-white hover:underline" href="{{ page_url(page) }}">{{ page.title(locale) }}</a></li>
+                {% endfor %}
+                <li><a class="inline-flex min-h-8 items-center text-white/85 hover:text-white hover:underline" href="{{ path('contact') }}">{{ 'nav.contact'|trans }}</a></li>
+                <li><a class="inline-flex min-h-8 items-center gap-2 text-white/85 hover:text-white hover:underline" href="{{ path('languages') }}">{{ icon('globe', 'size-4') }} {{ 'nav.languages'|trans }}</a></li>
+            </ul>
+        </nav>
+    </div>
+    <div class="border-t border-white/15">
+        <p class="container-page py-5 text-sm text-white/80">© {{ 'now'|date('Y') }} {{ settings.ownerName ?? settings.siteName }} · {{ 'footer.rights'|trans }}</p>
+    </div>
+</footer>

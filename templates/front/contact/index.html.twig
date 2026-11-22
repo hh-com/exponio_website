@@ -1,0 +1,30 @@
+{% extends 'base.html.twig' %}
+
+{% set canonical = path('contact') %}
+{% block title %}{{ 'contact.title'|trans }} · {{ settings.siteName }}{% endblock %}
+{% block description %}{{ 'contact.intro'|trans }}{% endblock %}
+
+{% block body %}
+    {{ include('front/partials/_page_header.html.twig', {title: 'contact.title'|trans, breadcrumbs: [{label: 'contact.title'|trans, url: null}]}) }}
+
+    <div class="container-page py-8 sm:py-12">
+        <div class="card grid gap-8 p-6 sm:p-10 lg:grid-cols-[1fr_1.4fr] lg:gap-14">
+            <div>
+                <p class="text-lg text-pretty text-muted">{{ 'contact.intro'|trans }}</p>
+                {% if settings.contactEmail %}
+                    <p class="mt-6 text-sm text-muted">{{ 'contact.direct'|trans }}:</p>
+                    <a href="mailto:{{ settings.contactEmail }}" class="link mt-1 inline-flex items-center gap-2">{{ icon('mail', 'size-4') }} {{ settings.contactEmail }}</a>
+                {% endif %}
+            </div>
+            {% set privacyPage = settings.privacyPage %}
+            <div data-island="inquiry-form" data-props="{{ {
+                endpoint: path('api_inquiry'),
+                token: csrf_token('submit'),
+                privacyUrl: privacyPage ? page_url(privacyPage) : null,
+            }|json_encode|e('html_attr') }}">
+                <p class="text-muted">{{ 'vue.loading'|trans }}</p>
+                <noscript><p class="text-sm text-muted">{{ 'contact.direct'|trans }}: {{ settings.contactEmail }}</p></noscript>
+            </div>
+        </div>
+    </div>
+{% endblock %}

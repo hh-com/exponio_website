@@ -1,0 +1,44 @@
+{# Ergebnisraster + Seitennavigation; wird auch per JSON an Vue geliefert. Variablen: result, query, baseUrl #}
+{% if result.items is empty %}
+    <div class="card flex flex-col items-center px-6 py-16 text-center">
+        <span class="mb-5 grid size-16 place-items-center rounded-2xl bg-soft text-ink">{{ icon('search', 'size-7') }}</span>
+        <h2 class="text-xl">{{ 'catalog.no_results'|trans }}</h2>
+        <p class="mt-2 max-w-sm text-sm text-muted">{{ 'catalog.no_results_hint'|trans }}</p>
+    </div>
+{% else %}
+    <h2 class="sr-only">{{ 'catalog.results_list'|trans }}</h2>
+    <ul class="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
+        {% for item in result.items %}
+            <li>{{ include('front/partials/_card.html.twig', {item: item, eager: loop.index <= 4}) }}</li>
+        {% endfor %}
+    </ul>
+
+    {% if result.pages > 1 %}
+        {% set current = result.page %}
+        <nav class="mt-10 flex flex-wrap items-center justify-center gap-1.5" aria-label="{{ 'catalog.pagination'|trans }}">
+            {% if current > 1 %}
+                <a href="{{ _self.page_url(baseUrl, query, current - 1) }}" data-page="{{ current - 1 }}" rel="prev" class="btn btn-secondary px-3.5" aria-label="{{ 'catalog.prev'|trans }}">{{ icon('chevron-left', 'size-4 flip-rtl') }}<span class="hidden sm:inline">{{ 'catalog.prev'|trans }}</span></a>
+            {% endif %}
+            {% set window = 1 %}
+            {% for p in 1..result.pages %}
+                {% if p == 1 or p == result.pages or (p >= current - window and p <= current + window) %}
+                    {% if p == current %}
+                        <span aria-current="page" class="grid size-11 place-items-center rounded-full bg-ink text-sm font-semibold text-white tabular-nums">{{ p }}</span>
+                    {% else %}
+                        <a href="{{ _self.page_url(baseUrl, query, p) }}" data-page="{{ p }}" aria-label="{{ 'catalog.page'|trans({'%page%': p, '%pages%': result.pages}) }}" class="grid size-11 place-items-center rounded-full bg-white text-sm font-medium tabular-nums ring-1 ring-line transition hover:ring-ink">{{ p }}</a>
+                    {% endif %}
+                {% elseif p == current - window - 1 or p == current + window + 1 %}
+                    <span class="px-1 text-muted" aria-hidden="true">…</span>
+                {% endif %}
+            {% endfor %}
+            {% if current < result.pages %}
+                <a href="{{ _self.page_url(baseUrl, query, current + 1) }}" data-page="{{ current + 1 }}" rel="next" class="btn btn-secondary px-3.5" aria-label="{{ 'catalog.next'|trans }}"><span class="hidden sm:inline">{{ 'catalog.next'|trans }}</span>{{ icon('chevron-right', 'size-4 flip-rtl') }}</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+{% endif %}
+
+{% macro page_url(baseUrl, query, page) -%}
+    {%- set params = query.withPage(page).toParams() -%}
+    {{- baseUrl }}{% if params|length %}?{{ params|url_encode }}{% endif -%}
+{%- endmacro %}

@@ -1,0 +1,13 @@
+{% extends 'base.html.twig' %}
+
+{% set noindex = true %}
+{% block title %}{{ 'watchlist.title'|trans }} · {{ settings.siteName }}{% endblock %}
+
+{% block body %}
+    {{ include('front/partials/_page_header.html.twig', {title: 'watchlist.title'|trans, intro: 'watchlist.intro'|trans, breadcrumbs: [{label: 'watchlist.title'|trans, url: null}]}) }}
+    <div class="container-page py-8 sm:py-12">
+        <div data-island="watchlist" data-props="{{ {endpoint: path('api_cards'), catalogUrl: path('catalog')}|json_encode|e('html_attr') }}">
+            <p class="text-muted">{{ 'vue.loading'|trans }}</p>
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,92 @@
+/* Backend: Tailwind nur mit Präfix "tw:" und ohne Preflight, damit EasyAdmin unberührt bleibt */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw) source(none);
+@source "../admin";
+
+@theme {
+  /* Farben wie im Frontend (StyleGuide) */
+  --color-brand-50: #eef1f6;
+  --color-brand-100: #dce3ee;
+  --color-brand-200: #b9c6db;
+  --color-brand-500: #3a5378;
+  --color-brand-600: #2a3f60;
+  --color-brand-700: #1a2a43;
+  --color-brand-800: #142135;
+  --color-paper: #f1efea;
+  --color-soft: #f2ede2;
+  --color-line: #d9d2c3;
+}
+
+/* Übersicht (templates/admin/dashboard.html.twig) */
+.ps-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.ps-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 14px;
+  background: var(--body-bg, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  text-decoration: none !important;
+  color: inherit !important;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+a.ps-stat:hover {
+  box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.25);
+  transform: translateY(-1px);
+}
+.ps-stat__value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ps-stat__label {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+.ps-stat--warning { border-left: 4px solid #f59e0b; }
+.ps-stat--success { border-left: 4px solid #10b981; }
+.ps-stat--danger { border-left: 4px solid #ef4444; }
+.ps-stat--info { border-left: 4px solid #8b5cf6; }
+
+/* Upload-Historie (templates/admin/field/uploads.html.twig) */
+.ps-uploads td { vertical-align: top; }
+.ps-uploads__summary { margin: 0 0 0.75rem; opacity: 0.8; }
+.ps-uploads__actions { white-space: nowrap; text-align: end; }
+.ps-uploads__form { display: block; margin: 0 0 0.25rem; }
+.ps-thumbs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem; }
+.ps-thumbs img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  padding: 2px;
+  border-radius: 8px;
+  background: #f2ede2;
+}
+.ps-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+/* Merkmalsgruppen im Objekt-Formular: nur die gewählte Objektart zeigen */
+.attr-area-group[hidden] {
+  display: none !important;
+}
+.attr-area-group .form-widget-compound > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  column-gap: 1.5rem;
+}
+.attr-area-group .form-widget-compound > div > .flex-fill {
+  display: none;
+}

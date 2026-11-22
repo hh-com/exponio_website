@@ -1,0 +1,13 @@
+# Statische Analyse: vendor/bin/phpstan analyse (oder composer check)
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+        - migrations
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml
+    doctrine:
+        objectManagerLoader: tests/object-manager.php
+        # Formulare brauchen nullbare Eigenschaften (Symfony setzt vor der Validierung null)
+        allowNullablePropertyForRequiredField: true

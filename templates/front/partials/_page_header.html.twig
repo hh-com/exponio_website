@@ -1,0 +1,8 @@
+{# Kopfbereich einfacher Seiten. Variablen: title, (optional) intro, breadcrumbs #}
+<section class="border-b border-line/80 bg-soft">
+    <div class="container-page py-8 sm:py-12">
+        {{ include('front/partials/_breadcrumbs.html.twig') }}
+        <h1 class="text-3xl text-balance sm:text-4xl">{{ title }}</h1>
+        {% if intro|default(null) %}<p class="mt-3 max-w-2xl text-pretty text-muted">{{ intro }}</p>{% endif %}
+    </div>
+</section>

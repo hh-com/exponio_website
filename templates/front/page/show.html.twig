@@ -1,0 +1,16 @@
+{% extends 'base.html.twig' %}
+
+{% set canonical = page_url(page) %}
+{% set fallback = fallback_lang(page) %}
+{% block title %}{{ page.title(locale) }} · {{ settings.siteName }}{% endblock %}
+{% block description %}{{ page.content(locale)|default('')|striptags|slice(0, 155)|trim }}{% endblock %}
+
+{% block body %}
+    {{ include('front/partials/_page_header.html.twig', {title: page.title(locale), breadcrumbs: [{label: page.title(locale), url: null}]}) }}
+    <div class="container-page py-8 sm:py-12">
+        <article class="prose-page" {% if fallback %}lang="{{ fallback }}"{% endif %}>
+            {{ page.content(locale)|default('')|sanitize_html('app.page_sanitizer') }}
+        </article>
+        <p class="mt-10 text-sm text-muted">{{ 'common.updated'|trans }}: <time datetime="{{ page.updatedAt|date('Y-m-d') }}">{{ page.updatedAt|date_local }}</time></p>
+    </div>
+{% endblock %}

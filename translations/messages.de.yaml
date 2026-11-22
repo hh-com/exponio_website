@@ -1,0 +1,193 @@
+# Oberflächentexte der Website (Ausgangssprache). Weitere Sprachen außer Englisch übersetzt die KI
+# in die Tabelle ui_translation (Backend → Oberflächentexte).
+meta:
+    description: 'Eine private Sammlung von Briefmarken, Belegen, Ganzsachen und weiteren Sammelstücken – fotografiert, bestimmt und übersichtlich nach Ländern und Themen geordnet.'
+
+nav:
+    home: Startseite
+    main: Hauptnavigation
+    breadcrumb: Brotkrumenpfad
+    catalog: Katalog
+    all_items: Alle Objekte
+    areas: Objektarten
+    regions: Länder
+    topics: Themen
+    watchlist: Merkliste
+    contact: Kontakt
+    menu: Menü
+    close: Schließen
+    language: Sprache
+    languages: Alle Sprachen
+    search_placeholder: 'Suchen: Land, Jahr, Motiv, Michel-Nr. …'
+    skip: Zum Inhalt springen
+
+common:
+    yes: Ja
+    no: Nein
+    all: Alle
+    show_all: Alle anzeigen
+    items: '{0} keine Objekte|{1} 1 Objekt|]1,Inf[ %count% Objekte'
+    back_home: Zur Startseite
+    updated: Zuletzt aktualisiert
+
+home:
+    eyebrow: Sammlung online
+    browse: Katalog durchsuchen
+    featured: Ausgewählte Stücke
+    latest: Neu in der Sammlung
+    areas_title: Objektarten
+    regions_title: Nach Land
+    topics_title: Nach Thema
+    stats_items: Objekte
+    stats_regions: Länder
+    stats_years: Zeitraum
+    cta_title: Fragen oder Hinweise zur Sammlung?
+    cta_text: Schreiben Sie mir gern – über Ergänzungen, Korrekturen und den Austausch unter Sammlern freue ich mich.
+    cta_button: Kontakt aufnehmen
+    empty: Die Sammlung wird gerade aufgebaut – schauen Sie bald wieder vorbei.
+
+catalog:
+    title: Katalog
+    search_title: 'Suche nach „%q%“'
+    subregions: Untergebiete
+    results_list: Ergebnisse
+    no_results: Keine Treffer
+    no_results_hint: Lockern Sie die Filter oder versuchen Sie einen anderen Suchbegriff.
+    page: 'Seite %page% von %pages%'
+    pagination: Seiten
+    prev: Zurück
+    next: Weiter
+    regions_title: Alle Länder
+    regions_intro: Die Sammlung nach Ländern, Regionen und Epochen.
+    topics_title: Alle Themen
+    topics_intro: Motive und Themen quer durch alle Länder.
+    sort:
+        new: Neueste zuerst
+        year_asc: Jahr aufsteigend
+        year_desc: Jahr absteigend
+        title: Titel A–Z
+
+item:
+    details: Details
+    area: Objektart
+    region: Land
+    year: Jahr
+    issue_date: Ausgabetag
+    series: Serie / Ausgabe
+    topics: Themen
+    defects: Mängel
+    estimate: Schätzwert
+    estimate_short: 'ca. %value%'
+    estimate_note: Unverbindliche Schätzung – kein Verkaufsangebot.
+    number: Objekt-Nr.
+    watch: Merken
+    watched: Gemerkt
+    similar: Ähnliche Stücke
+    description: Beschreibung
+    preview: 'Vorschau – dieses Objekt ist nicht veröffentlicht (Status: %status%).'
+    edit: Im Backend bearbeiten
+
+inquiry:
+    error_generic: Die Nachricht konnte nicht verarbeitet werden. Bitte laden Sie die Seite neu.
+    error_rate: Zu viele Nachrichten in kurzer Zeit. Bitte versuchen Sie es später erneut.
+    v_name: Bitte geben Sie Ihren Namen an.
+    v_email: Bitte geben Sie eine gültige E-Mail-Adresse an.
+    v_message: Bitte schreiben Sie eine kurze Nachricht (mindestens 10 Zeichen).
+
+contact:
+    title: Kontakt
+    intro: Sie haben Fragen zur Sammlung, Hinweise zu einem Stück oder möchten sich austauschen? Schreiben Sie mir – ich melde mich so bald wie möglich.
+    direct: Direkt per E-Mail
+
+watchlist:
+    title: Merkliste
+    intro: Ihre gemerkten Stücke – gespeichert nur in diesem Browser.
+
+languages:
+    title: Sprachen
+    intro: Diese Website gibt es in mehreren Sprachen. Die Übersetzungen entstehen mit Hilfe einer KI.
+
+footer:
+    collection: Sammlung
+    info: Informationen
+    rights: Alle Rechte vorbehalten.
+
+error:
+    not_found_title: Seite nicht gefunden
+    not_found_text: Diese Seite gibt es nicht (mehr). Vielleicht finden Sie im Katalog, was Sie suchen.
+    generic_title: Etwas ist schiefgelaufen
+    generic_text: Bitte versuchen Sie es später erneut.
+
+enum:
+    item_status:
+        draft: Entwurf
+        review: Zu prüfen
+        published: Veröffentlicht
+        archived: Archiviert
+    attribute_type:
+        text: Text
+        number: Zahl
+        select: Auswahl
+        boolean: Ja/Nein
+    inquiry_status:
+        new: Neu
+        answered: Beantwortet
+        closed: Erledigt
+    scan_status:
+        imported: Importiert
+        failed: Fehlgeschlagen
+        merged: Als Duplikat zugeordnet
+    image_side:
+        front: Vorderseite
+        back: Rückseite
+        detail: Detail
+
+# Texte für die Vue-Komponenten (werden als JSON in die Seite geschrieben)
+vue:
+    menu: Menü
+    filters: Filter
+    filter_area: Objektart
+    filter_region: Land
+    filter_topic: Thema
+    filter_year: Zeitraum
+    year_from: von
+    year_to: bis
+    reset: Alle Filter zurücksetzen
+    show_results: '%count% Treffer anzeigen'
+    results: '%count% Treffer'
+    sort: Sortierung
+    search: Suche
+    search_in_results: In Ergebnissen suchen …
+    remove_filter: Filter entfernen
+    active_filters: Aktive Filter
+    loading: Lädt …
+    more: Mehr anzeigen
+    less: Weniger anzeigen
+    close: Schließen
+    expand: 'Untergebiete von %name% anzeigen'
+    suggest_items: Objekte
+    suggest_regions: Länder
+    suggest_topics: Themen
+    suggest_all: 'Alle %count% Treffer anzeigen'
+    suggest_none: Keine Vorschläge
+    gallery: Bilder
+    image: 'Bild %n% von %total%'
+    prev: Vorheriges Bild
+    next: Nächstes Bild
+    zoom: Vergrößern
+    zoom_hint: Zum Vergrößern klicken oder Eingabetaste drücken
+    form_name: Name
+    form_email: E-Mail
+    form_message: Nachricht
+    form_required: Pflichtfeld
+    form_privacy: 'Ihre Angaben verwende ich nur, um Ihre Nachricht zu beantworten. Mehr dazu in der <a href="%url%" class="link">Datenschutzerklärung</a>.'
+    form_submit: Nachricht senden
+    form_sending: Wird gesendet …
+    form_success_title: Vielen Dank!
+    form_success_text: Ihre Nachricht ist angekommen. Ich melde mich so bald wie möglich.
+    form_error: Die Nachricht konnte nicht gesendet werden. Bitte später erneut versuchen.
+    form_check: Bitte prüfen Sie die markierten Felder.
+    watch_empty: Ihre Merkliste ist noch leer.
+    watch_empty_hint: Tippen Sie bei einem Stück auf das Herz, um es hier zu sammeln.
+    watch_clear: Liste leeren
+    browse: Katalog durchsuchen

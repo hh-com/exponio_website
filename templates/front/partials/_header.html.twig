@@ -1,0 +1,97 @@
+{% set locale = app.request.locale %}
+{% set route = app.request.attributes.get('_canonical_route') ?? app.request.attributes.get('_route') %}
+{% set areas = nav_areas() %}
+{% set catalogActive = route in ['catalog', 'area', 'item'] %}
+{% set catalogItems = [{label: 'nav.all_items'|trans, url: path('catalog'), icon: 'grid', count: null}]|merge(
+    areas|map(a => {label: a.name(locale), url: area_url(a), icon: a.icon, count: area_count(a)})
+) %}
+{% set links = [
+    {label: 'nav.regions'|trans, url: path('regions'), icon: 'globe', active: route in ['regions', 'region']},
+    {label: 'nav.topics'|trans, url: path('topics'), icon: 'tag', active: route in ['topics', 'topic']},
+    {label: 'nav.contact'|trans, url: path('contact'), icon: 'mail', active: route == 'contact'},
+] %}
+{% set languages = locales() %}
+{% set searchProps = {endpoint: path('api_suggest'), catalogUrl: path('catalog'), placeholder: 'nav.search_placeholder'|trans} %}
+
+<header class="sticky top-0 z-40 border-b border-line/80 bg-paper/90 backdrop-blur-md supports-[backdrop-filter]:bg-paper/80">
+    <div class="container-page flex h-[4.5rem] items-center gap-2 sm:gap-3">
+        <a href="{{ path('home') }}" class="flex min-w-0 shrink-0 items-center gap-3" aria-label="{{ settings.siteName }} – {{ 'nav.home'|trans }}">
+            <span class="logo-tile size-11"><img src="{{ brand('logo') }}" alt="" width="44" height="44" class="size-full"></span>
+            <span class="hidden truncate font-display text-lg leading-tight sm:inline sm:text-xl">{{ settings.siteName }}</span>
+        </a>
+
+        <nav class="ms-4 hidden items-center gap-1 lg:flex" aria-label="{{ 'nav.main'|trans }}">
+            {% if areas|length > 1 %}
+                <div class="relative" data-disclosure>
+                    <button type="button" class="flex min-h-11 items-center gap-1 rounded-full px-4 text-[15px] font-semibold transition hover:bg-sand aria-expanded:[&_svg]:rotate-180 {{ catalogActive ? 'bg-sand' }}" aria-expanded="false" aria-controls="nav-catalog" data-disclosure-toggle>
+                        {{ 'nav.catalog'|trans }} {{ icon('chevron-down', 'size-4 transition') }}
+                    </button>
+                    <div id="nav-catalog" class="absolute top-full start-0 pt-2" hidden data-disclosure-panel>
+                        <ul class="card w-80 p-2">
+                            {% for entry in catalogItems %}
+                                <li>
+                                    <a href="{{ entry.url }}" class="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 transition hover:bg-soft {{ loop.first ? 'font-semibold' }}">
+                                        <span class="grid size-9 place-items-center rounded-lg bg-brand-50 text-ink">{{ icon(entry.icon, 'size-5') }}</span>
+                                        <span class="flex-1 text-[15px]">{{ entry.label }}</span>
+                                        {% if entry.count is not null %}<span class="text-sm text-muted tabular-nums">{{ entry.count }}</span>{% endif %}
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            {% else %}
+                <a href="{{ path('catalog') }}" class="flex min-h-11 items-center rounded-full px-4 text-[15px] font-semibold transition hover:bg-sand {{ catalogActive ? 'bg-sand' }}" {% if catalogActive %}aria-current="page"{% endif %}>{{ 'nav.catalog'|trans }}</a>
+            {% endif %}
+            {% for link in links %}
+                <a href="{{ link.url }}" class="flex min-h-11 items-center rounded-full px-4 text-[15px] font-semibold transition hover:bg-sand {{ link.active ? 'bg-sand' }}" {% if link.active %}aria-current="page"{% endif %}>{{ link.label }}</a>
+            {% endfor %}
+        </nav>
+
+        <div class="ms-auto flex items-center gap-1">
+            <div class="hidden w-60 md:block xl:w-72" data-island="search-box" data-props="{{ searchProps|json_encode|e('html_attr') }}">
+                <form action="{{ path('catalog') }}" role="search">
+                    <label class="sr-only" for="header-q">{{ 'vue.search'|trans }}</label>
+                    <input id="header-q" name="q" type="search" class="input h-11 rounded-full ps-5 text-sm" placeholder="{{ 'nav.search_placeholder'|trans }}">
+                </form>
+            </div>
+            <a href="{{ path('catalog') }}" class="btn-icon md:hidden" aria-label="{{ 'vue.search'|trans }}">{{ icon('search') }}</a>
+            <a href="{{ path('watchlist') }}" class="btn-icon relative" aria-label="{{ 'nav.watchlist'|trans }}">
+                {{ icon('heart') }}
+                <span data-watch-count class="absolute top-1 end-0.5 hidden min-w-[18px] rounded-full bg-heart px-1 text-center text-[11px] leading-[18px] font-bold text-white tabular-nums"></span>
+            </a>
+            {% if languages|length > 1 %}
+                <div class="relative hidden sm:block" data-disclosure>
+                    <button type="button" class="btn-icon w-auto gap-1.5 px-3 text-sm font-semibold uppercase" aria-expanded="false" aria-controls="nav-languages" data-disclosure-toggle>
+                        {{ icon('globe', 'size-5') }}<span class="sr-only">{{ 'nav.language'|trans }}:</span> {{ locale }}
+                    </button>
+                    <div id="nav-languages" class="absolute top-full end-0 pt-2" hidden data-disclosure-panel>
+                        <ul class="card max-h-[70vh] w-64 overflow-y-auto p-2">
+                            {% for language in languages|slice(0, 10) %}
+                                <li>
+                                    <a href="{{ alt_url(language.code) }}" hreflang="{{ language.code }}" lang="{{ language.code }}" class="flex min-h-11 items-center justify-between gap-3 rounded-xl px-3 py-2 transition hover:bg-soft" {% if language.code == locale %}aria-current="true"{% endif %}>
+                                        <span>{{ language.nativeName }}</span>
+                                        <span class="text-xs text-muted uppercase">{{ language.code }}</span>
+                                    </a>
+                                </li>
+                            {% endfor %}
+                            <li class="mt-1 border-t border-line pt-1">
+                                <a href="{{ path('languages') }}" class="flex min-h-11 items-center gap-2 rounded-xl px-3 py-2 font-semibold transition hover:bg-soft">{{ 'nav.languages'|trans }} {{ icon('arrow-right', 'size-4 flip-rtl') }}</a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            {% endif %}
+            <div class="lg:hidden" data-island="mobile-menu" data-props="{{ {
+                catalog: {label: 'nav.catalog'|trans, items: catalogItems, active: catalogActive},
+                links: links,
+                watchlist: {label: 'nav.watchlist'|trans, url: path('watchlist')},
+                languages: {label: 'nav.languages'|trans, url: path('languages'), current: locale},
+                search: searchProps,
+                title: settings.siteName,
+            }|json_encode|e('html_attr') }}">
+                <a href="{{ path('catalog') }}" class="btn-icon" aria-label="{{ 'nav.menu'|trans }}">{{ icon('menu') }}</a>
+            </div>
+        </div>
+    </div>
+</header>

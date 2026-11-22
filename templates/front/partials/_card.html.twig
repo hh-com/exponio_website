@@ -1,0 +1,45 @@
+{# Objektkarte nach Styleguide. Variablen: item, (optional) eager #}
+{% set locale = app.request.locale %}
+{% set image = item.mainImage %}
+{% set title = item.title(locale) %}
+{% set fallback = fallback_lang(item) %}
+{% set meta = card_meta(item) %}
+<article class="group relative flex h-full flex-col overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-line/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-lift">
+    <div class="mount aspect-[4/5] p-5 sm:p-7">
+        {% if image %}
+            <img src="{{ img(image, 400) }}"
+                 srcset="{{ img(image, 400) }} 400w, {{ img(image, 800) }} 800w"
+                 sizes="(min-width: 1280px) 290px, (min-width: 768px) 30vw, 46vw"
+                 width="{{ image.width }}" height="{{ image.height }}"
+                 alt="{{ image.alt(locale) ?? title }}" {% if fallback_lang(image) %}lang="de"{% endif %}
+                 loading="{{ eager|default(false) ? 'eager' : 'lazy' }}" decoding="async"
+                 class="group-hover:scale-[1.03]">
+        {% else %}
+            <span class="text-muted">{{ icon(item.area.icon ?? 'stamp', 'size-12') }}</span>
+        {% endif %}
+    </div>
+
+    {% if item.area %}
+        <span class="badge absolute top-3 start-3 bg-ink text-white">{{ item.area.name(locale) }}</span>
+    {% endif %}
+
+    <button type="button" data-watch="{{ item.id }}" aria-pressed="false" aria-label="{{ 'item.watch'|trans }}: {{ title }}"
+            class="absolute top-2 end-2 z-10 grid size-11 place-items-center rounded-full bg-white/95 text-heart shadow-sm ring-1 ring-line transition hover:bg-white aria-pressed:[&_svg]:fill-current">
+        {{ icon('heart', 'size-5') }}
+    </button>
+
+    <div class="flex flex-1 flex-col p-4 sm:p-5">
+        <p class="truncate text-xs font-semibold tracking-wide text-muted uppercase">
+            {{- [item.category ? item.category.name(locale) : null, item.yearLabel]|filter(v => v)|join(' · ') -}}
+        </p>
+        <h3 class="mt-1 line-clamp-2 font-sans text-base leading-snug font-bold" {% if fallback %}lang="{{ fallback }}"{% endif %}>
+            <a href="{{ item_url(item) }}" class="after:absolute after:inset-0 after:z-0 focus-visible:outline-none focus-visible:after:outline-3 focus-visible:after:outline-info focus-visible:after:rounded-2xl">{{ title }}</a>
+        </h3>
+        {% if meta %}<p class="mt-1 line-clamp-1 text-sm text-muted">{{ meta }}</p>{% endif %}
+        {% if item.estimateVisible %}
+            <p class="mt-auto pt-3 text-base font-bold text-info tabular-nums">
+                <span class="sr-only">{{ 'item.estimate'|trans }}:</span> {{ 'item.estimate_short'|trans({'%value%': item.catalogValue|money}) }}
+            </p>
+        {% endif %}
+    </div>
+</article>

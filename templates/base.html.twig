@@ -1,0 +1,49 @@
+{% set locale = app.request.locale %}
+{% set settings = site() %}
+{% set alternates = alternates() %}
+<!doctype html>
+<html lang="{{ locale }}" dir="{{ locale_dir() }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>{% block title %}{{ settings.siteName }}{% if settings.tagline(locale) %} – {{ settings.tagline(locale) }}{% endif %}{% endblock %}</title>
+    <meta name="description" content="{% block description %}{{ settings.intro(locale) ? settings.intro(locale)|striptags|slice(0, 155) : 'meta.description'|trans }}{% endblock %}">
+    {% if noindex|default(false) %}<meta name="robots" content="noindex, follow">{% endif %}
+    {% if canonical is defined %}<link rel="canonical" href="{{ absolute_url(canonical) }}">{% endif %}
+    {% if not noindex|default(false) and alternates|length > 1 %}
+        {% for code, href in alternates %}<link rel="alternate" hreflang="{{ code }}" href="{{ absolute_url(href) }}">
+        {% endfor %}
+        {% if alternates.de is defined %}<link rel="alternate" hreflang="x-default" href="{{ absolute_url(alternates.de) }}">{% endif %}
+    {% endif %}
+    <meta property="og:site_name" content="{{ settings.siteName }}">
+    <meta property="og:title" content="{{ block('title')|striptags|trim }}">
+    <meta property="og:description" content="{{ block('description')|striptags|trim }}">
+    <meta property="og:locale" content="{{ og_locale(locale) }}">
+    {% for code in alternates|keys|filter(c => c != locale) %}<meta property="og:locale:alternate" content="{{ og_locale(code) }}">
+    {% endfor %}
+    {% block og %}
+        <meta property="og:type" content="website">
+        <meta property="og:image" content="{{ absolute_url(brand('og')) }}">
+    {% endblock %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="theme-color" content="#1a2a43">
+    <link rel="icon" href="{{ brand('favicon') }}" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="{{ brand('apple-touch-icon') }}">
+    <link rel="manifest" href="{{ path('site_manifest') }}">
+    {{ vite('assets/app.ts') }}
+    {% block head %}{% endblock %}
+</head>
+<body class="flex min-h-dvh flex-col">
+    <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:start-3 focus:z-50 focus:rounded-full focus:bg-white focus:px-5 focus:py-3 focus:font-semibold focus:shadow-lift">{{ 'nav.skip'|trans }}</a>
+
+    {{ include('front/partials/_header.html.twig') }}
+
+    <main id="main" class="flex-1" tabindex="-1">
+        {% block body %}{% endblock %}
+    </main>
+
+    {{ include('front/partials/_footer.html.twig') }}
+
+    <script type="application/json" id="i18n">{{ vue_messages()|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP') b-or constant('JSON_UNESCAPED_UNICODE'))|raw }}</script>
+</body>
+</html>

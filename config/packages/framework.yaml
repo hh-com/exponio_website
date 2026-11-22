@@ -1,0 +1,55 @@
+# see https://symfony.com/doc/current/reference/configuration/framework.html
+framework:
+    secret: '%env(APP_SECRET)%'
+
+    # Die Session wird nur gestartet, wenn sie gelesen/geschrieben wird (Backend-Login).
+    # Das öffentliche Frontend setzt keine Cookies – sonst wären die Seiten nicht cachebar.
+    session:
+        cookie_secure: auto
+        cookie_samesite: lax
+
+    # Gemini Interactions API; der API-Key wird je Anfrage gesetzt (App\Ai\GeminiClient)
+    http_client:
+        scoped_clients:
+            gemini.client:
+                base_uri: 'https://generativelanguage.googleapis.com/v1beta/'
+                timeout: 300
+                max_duration: 600
+                retry_failed:
+                    max_retries: 3
+                    delay: 2000
+                    multiplier: 2
+
+    rate_limiter:
+        inquiry:
+            policy: sliding_window
+            limit: 5
+            interval: '30 minutes'
+
+    html_sanitizer:
+        sanitizers:
+            app.page_sanitizer:
+                allow_safe_elements: true
+                allow_relative_links: true
+                allow_relative_medias: true
+
+# Seiten-Cache (Reverse-Proxy in PHP): speichert fertige Seiten unter var/share/prod/http_cache.
+# Geleert wird er bei jeder Inhaltsänderung (App\Cache\ContentVersion).
+when@prod:
+    framework:
+        http_cache:
+            enabled: true
+            default_ttl: 0
+            stale_while_revalidate: 60
+            stale_if_error: 86400
+
+when@test:
+    framework:
+        test: true
+        session:
+            storage_factory_id: session.storage.factory.mock_file
+        rate_limiter:
+            inquiry:
+                policy: sliding_window
+                limit: 1000
+                interval: '1 minute'

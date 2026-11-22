@@ -1,0 +1,92 @@
+{# Upload-Historie eines Objekts (Detailseite im Backend): jeder Upload der App mit Ergebnis der Duplikat-Erkennung,
+   Begründung der KI und den Fotos. Aktionen gehen an App\Controller\Admin\UploadController. #}
+{% set item = entity.instance %}
+{% set uploads = field.value %}
+
+{% if item.possibleDuplicate %}
+    <twig:ea:Alert variant="warning">
+        Mögliches Duplikat von
+        <a href="{{ path('admin_item_detail', {entityId: item.duplicateOf.id}) }}">#{{ item.duplicateOf.id }} {{ item.duplicateOf.title }}</a>
+        {% if item.duplicateConfidence is not null %}(Sicherheit {{ (item.duplicateConfidence * 100)|round }} %){% endif %}.
+        Entscheiden unter <a href="{{ path('admin_review_index') }}">Prüfen & freigeben</a>.
+    </twig:ea:Alert>
+{% endif %}
+
+<p class="ps-uploads__summary">
+    {{ item.uploadCount }}× hochgeladen{% if item.duplicateStatus %} · Duplikatprüfung: {{ item.duplicateStatus.label }}{% endif %}
+</p>
+
+<table class="table datagrid ps-uploads">
+    <thead>
+        <tr>
+            <th scope="col">Datum</th>
+            <th scope="col">Ordner</th>
+            <th scope="col">Erkannt als</th>
+            <th scope="col">Fotos</th>
+            <th scope="col">Begründung der KI</th>
+            <th scope="col"><span class="visually-hidden">Aktionen</span></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for upload in uploads %}
+        <tr>
+            <td>{{ upload.uploadedAt|date('d.m.Y H:i') }}</td>
+            <td>{% if upload.folder %}<code>{{ upload.folder }}</code>{% else %}im Backend angelegt{% endif %}</td>
+            <td>
+                {% if upload.duplicate %}
+                    <twig:ea:Badge color="warning">Duplikat</twig:ea:Badge>
+                {% else %}
+                    <twig:ea:Badge color="secondary">neues Objekt</twig:ea:Badge>
+                {% endif %}
+                {% if upload.manual %}<small>(von Hand)</small>{% endif %}
+                {% if upload.specimen %}<br><small>{{ upload.specimen.label }}</small>{% endif %}
+                {% if upload.confidence is not null %}<br><small>Sicherheit {{ (upload.confidence * 100)|round }} %</small>{% endif %}
+                {% if upload.better is not null %}<br><small>{{ upload.better ? 'besser als bisher' : 'nicht besser' }}</small>{% endif %}
+            </td>
+            <td>
+                {% if upload.shown %}
+                    <twig:ea:Badge color="success">werden gezeigt</twig:ea:Badge>
+                {% elseif upload.proposal %}
+                    <twig:ea:Badge color="info">Vorschlag</twig:ea:Badge>
+                {% else %}
+                    <twig:ea:Badge color="light">ausgeblendet</twig:ea:Badge>
+                {% endif %}
+                <br><small>Bilder ersetzt: {{ upload.imagesReplaced ? 'ja' : 'nein' }}{% if upload.undoneAt %} (zurückgenommen am {{ upload.undoneAt|date('d.m.Y H:i') }}){% endif %}</small>
+                <div class="ps-thumbs">
+                    {% for image in upload.images|slice(0, 4) %}
+                        <a href="{{ asset(image.relativePath) }}" target="_blank" rel="noopener">
+                            <img src="{{ asset(image.relativePath(400)) }}" alt="Foto {{ loop.index }} aus diesem Upload" width="56" height="56" loading="lazy">
+                        </a>
+                    {% else %}
+                        <small>keine Fotos</small>
+                    {% endfor %}
+                </div>
+            </td>
+            <td>{{ upload.reason ?? '–' }}</td>
+            <td class="ps-uploads__actions">
+                {% set actions = [] %}
+                {% if upload.canUndo %}
+                    {% set actions = actions|merge([{name: 'undo', label: 'Rückgängig', style: 'btn-warning btn-outline'}]) %}
+                {% endif %}
+                {% if not upload.shown and upload.images|length > 0 %}
+                    {% set actions = actions|merge([{name: 'use', label: upload.proposal ? 'Bilder ersetzen' : 'Diese Fotos zeigen', style: 'btn-primary btn-outline'}]) %}
+                {% endif %}
+                {% if upload.proposal %}
+                    {% set actions = actions|merge([{name: 'reject', label: 'Vorschlag ablehnen', style: 'btn-default btn-ghost'}]) %}
+                {% endif %}
+                {% if upload.duplicate and not upload.shown and uploads|length > 1 and upload.images|length > 0 %}
+                    {% set actions = actions|merge([{name: 'split', label: 'Als eigenes Objekt abtrennen', style: 'btn-default btn-ghost'}]) %}
+                {% endif %}
+                {% for action in actions %}
+                    <form method="post" action="{{ path('admin_upload_action', {id: upload.id, action: action.name}) }}" class="ps-uploads__form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('upload' ~ upload.id) }}">
+                        <button type="submit" class="btn btn-sm {{ action.style }}">{{ action.label }}</button>
+                    </form>
+                {% endfor %}
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="6">Noch keine Uploads.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>

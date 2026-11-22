@@ -1,0 +1,37 @@
+{% extends 'base.html.twig' %}
+
+{% set canonical = path('regions') %}
+{% block title %}{{ 'catalog.regions_title'|trans }} · {{ settings.siteName }}{% endblock %}
+{% block description %}{{ 'catalog.regions_intro'|trans }}{% endblock %}
+
+{% block body %}
+    {{ include('front/partials/_page_header.html.twig', {title: 'catalog.regions_title'|trans, intro: 'catalog.regions_intro'|trans, breadcrumbs: [{label: 'nav.regions'|trans, url: null}]}) }}
+
+    <div class="container-page py-8 sm:py-12">
+        {% if roots is empty %}
+            <p class="text-muted">{{ 'home.empty'|trans }}</p>
+        {% endif %}
+        <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {% for root in roots %}
+                {% set children = tree.childrenOf(root.id)|filter(c => (counts[c.id] ?? 0) > 0) %}
+                <li class="card flex flex-col p-5">
+                    <a href="{{ category_url(root) }}" class="group flex items-center gap-3">
+                        <span class="grid size-12 place-items-center rounded-xl bg-brand-50 text-ink">{{ icon('globe', 'size-6') }}</span>
+                        <span class="flex-1">
+                            <span class="block font-display text-xl leading-tight group-hover:underline">{{ root.name(locale) }}</span>
+                            <span class="text-sm text-muted">{{ 'common.items'|trans({'%count%': counts[root.id] ?? 0}) }}</span>
+                        </span>
+                        {{ icon('chevron-right', 'size-5 text-muted flip-rtl') }}
+                    </a>
+                    {% if children is not empty %}
+                        <ul class="mt-4 flex flex-wrap gap-2 border-t border-line pt-4" aria-label="{{ 'catalog.subregions'|trans }}: {{ root.name(locale) }}">
+                            {% for child in children %}
+                                <li><a href="{{ category_url(child) }}" class="chip min-h-9 px-3 py-1 text-[13px]">{{ child.name(locale) }} <span class="text-xs text-muted tabular-nums">{{ counts[child.id] }}</span></a></li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endblock %}

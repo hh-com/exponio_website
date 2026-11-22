@@ -1,0 +1,28 @@
+{% extends 'base.html.twig' %}
+
+{% set canonical = path('topics') %}
+{% block title %}{{ 'catalog.topics_title'|trans }} · {{ settings.siteName }}{% endblock %}
+{% block description %}{{ 'catalog.topics_intro'|trans }}{% endblock %}
+
+{% block body %}
+    {{ include('front/partials/_page_header.html.twig', {title: 'catalog.topics_title'|trans, intro: 'catalog.topics_intro'|trans, breadcrumbs: [{label: 'nav.topics'|trans, url: null}]}) }}
+
+    <div class="container-page py-8 sm:py-12">
+        {% if topics is empty %}
+            <p class="text-muted">{{ 'home.empty'|trans }}</p>
+        {% endif %}
+        <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {% for topic in topics %}
+                <li>
+                    <a href="{{ topic_url(topic) }}" class="group card flex h-full items-center gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-lift">
+                        <span class="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-ink">{{ icon('tag', 'size-5') }}</span>
+                        <span class="min-w-0">
+                            <span class="block truncate font-semibold group-hover:underline">{{ topic.name(locale) }}</span>
+                            <span class="text-sm text-muted">{{ 'common.items'|trans({'%count%': counts[topic.id] ?? 0}) }}</span>
+                        </span>
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endblock %}

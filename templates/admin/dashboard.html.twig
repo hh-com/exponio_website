@@ -1,0 +1,149 @@
+{% extends '@EasyAdmin/page/content.html.twig' %}
+
+{% block content_title %}Übersicht{% endblock %}
+
+{% block page_actions %}
+    <twig:ea:Button htmlElement="a" href="{{ path('admin_review_index') }}" color="primary" icon="fa fa-wand-magic-sparkles">Prüfen & freigeben</twig:ea:Button>
+{% endblock %}
+
+{% block main %}
+    {% set toReview = counts.review + counts.draft %}
+    <div class="ps-dashboard">
+        <div class="ps-stats">
+            <a class="ps-stat ps-stat--warning" href="{{ path('admin_review_index') }}">
+                <span class="ps-stat__value">{{ toReview }}</span>
+                <span class="ps-stat__label">zu prüfen{% if counts.draft %} ({{ counts.draft }} unerkannt){% endif %}</span>
+            </a>
+            <a class="ps-stat ps-stat--success" href="{{ path('admin_item_index') }}">
+                <span class="ps-stat__value">{{ counts.published }}</span>
+                <span class="ps-stat__label">veröffentlicht</span>
+            </a>
+            <a class="ps-stat ps-stat--danger" href="{{ path('admin_inquiry_index') }}">
+                <span class="ps-stat__value">{{ newInquiries }}</span>
+                <span class="ps-stat__label">neue Nachrichten</span>
+            </a>
+            <div class="ps-stat">
+                <span class="ps-stat__value">{{ pendingFolders ?? '–' }}</span>
+                <span class="ps-stat__label">neue Upload-Ordner</span>
+            </div>
+        </div>
+
+        {% if scanError %}
+            <twig:ea:Alert variant="danger">
+                <strong>Upload-Verzeichnis nicht lesbar:</strong> {{ scanError }}<br>
+                Pfad in <code>.env.local</code> prüfen: <code>SCAN_DIR={{ scanDir }}</code>
+            </twig:ea:Alert>
+        {% else %}
+            <p>
+                Upload-Verzeichnis: <code>{{ scanDir }}</code>
+                {% if lastScan %}· letzter Import: {{ lastScan.createdAt|date('d.m.Y H:i') }} ({{ lastScan.folder }}){% endif %}
+            </p>
+        {% endif %}
+
+        <h2>Uploads und Duplikate</h2>
+        <div class="ps-stats">
+            <a class="ps-stat ps-stat--info" href="{{ path('admin_item_index', {filters: {multipleUploads: 1}, sort: {uploadCount: 'DESC'}}) }}">
+                <span class="ps-stat__value">{{ uploads.multiple }}</span>
+                <span class="ps-stat__label">Objekte mehrfach hochgeladen</span>
+            </a>
+            <div class="ps-stat">
+                <span class="ps-stat__value">{{ uploads.total }}</span>
+                <span class="ps-stat__label">Uploads insgesamt, davon {{ uploads.duplicates }} Duplikate ({{ uploads.recent }} in 30 Tagen)</span>
+            </div>
+            <div class="ps-stat">
+                <span class="ps-stat__value">{{ uploads.replaced }}</span>
+                <span class="ps-stat__label">Mal Bilder durch bessere ersetzt</span>
+            </div>
+            <a class="ps-stat ps-stat--warning" href="{{ path('admin_review_index') }}">
+                <span class="ps-stat__value">{{ uploads.possible + uploads.proposals }}</span>
+                <span class="ps-stat__label">offen: {{ uploads.possible }} mögliche Duplikate, {{ uploads.proposals }} Bildvorschläge</span>
+            </a>
+        </div>
+
+        <div class="ps-columns">
+            <section>
+                <h2>Am häufigsten hochgeladen</h2>
+                <table class="datagrid">
+                    <thead><tr><th>Nr.</th><th>Titel</th><th>Uploads</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for item in mostUploaded %}
+                        <tr>
+                            <td>#{{ item.id }}</td>
+                            <td><a href="{{ path('admin_item_detail', {entityId: item.id}) }}">{{ item.title }}</a></td>
+                            <td>{{ item.uploadCount }}×</td>
+                            <td><twig:ea:Badge color="{{ item.status.badge }}">{{ item.status|trans }}</twig:ea:Badge></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4">Noch kein Objekt wurde mehrfach hochgeladen.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+            <section>
+                <h2>Zuletzt erkannte Duplikate</h2>
+                <table class="datagrid">
+                    <thead><tr><th>Datum</th><th>Ordner</th><th>Objekt</th><th>Bilder</th></tr></thead>
+                    <tbody>
+                    {% for upload in latestDuplicates %}
+                        <tr>
+                            <td>{{ upload.createdAt|date('d.m.Y H:i') }}</td>
+                            <td><code>{{ upload.folder ?? '–' }}</code></td>
+                            <td><a href="{{ path('admin_item_detail', {entityId: upload.item.id}) }}">#{{ upload.item.id }} {{ upload.item.title }}</a></td>
+                            <td>{{ upload.imagesReplaced ? 'ersetzt' : (upload.proposal ? 'Vorschlag' : 'behalten') }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4">Noch keine Duplikate erkannt.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="ps-columns">
+            <section>
+                <h2>Zuletzt bearbeitet</h2>
+                <table class="datagrid">
+                    <thead><tr><th>Nr.</th><th>Titel</th><th>Status</th><th>Geändert</th></tr></thead>
+                    <tbody>
+                    {% for item in latestItems %}
+                        <tr>
+                            <td>#{{ item.id }}</td>
+                            <td><a href="{{ path('admin_item_edit', {entityId: item.id}) }}">{{ item.title }}</a></td>
+                            <td><twig:ea:Badge color="{{ item.status.badge }}">{{ item.status|trans }}</twig:ea:Badge></td>
+                            <td>{{ item.updatedAt|date('d.m.Y H:i') }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4">Noch keine Objekte. Lade Fotos mit der App hoch und klicke auf „Prüfen & freigeben“.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+            <section>
+                <h2>Neueste Nachrichten</h2>
+                <table class="datagrid">
+                    <thead><tr><th>Eingang</th><th>Von</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for inquiry in latestInquiries %}
+                        <tr>
+                            <td>{{ inquiry.createdAt|date('d.m.Y H:i') }}</td>
+                            <td><a href="{{ path('admin_inquiry_detail', {entityId: inquiry.id}) }}">{{ inquiry.name }}</a></td>
+                            <td>{{ inquiry.status|trans }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="3">Noch keine Nachrichten.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <h2>So funktioniert der Ablauf</h2>
+        <ol>
+            <li>Fotos einer Marke mit der Exponio-App aufnehmen und hochladen (ein Ordner = ein Objekt).</li>
+            <li>Der Cronjob <code>php bin/console app:scan</code> importiert neue Ordner und lässt sie per KI bestimmen – oder du klickst auf der Prüfseite auf „Ordner scannen“.</li>
+            <li>Ist ein Objekt schon in der Sammlung, ordnet die Duplikat-Erkennung den Upload dem vorhandenen Objekt zu und zählt ihn. Sind die neuen Fotos besser, ersetzen sie die alten (bei veröffentlichten Objekten erst nach deiner Bestätigung). Unsichere Fälle erscheinen unter „Prüfen & freigeben“.</li>
+            <li>Unter „Prüfen & freigeben“ die Vorschläge kontrollieren, korrigieren und veröffentlichen.</li>
+            <li>Der Cronjob <code>php bin/console app:translate</code> übersetzt veröffentlichte Objekte in alle freigeschalteten Sprachen (Website → Sprachen).</li>
+        </ol>
+    </div>
+{% endblock %}

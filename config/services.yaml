@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+parameters:
+    # Webbilder (WebP). MEDIA_DIR leer = public/media. Liegt der Ordner außerhalb von public/,
+    # muss public/media ein Symlink darauf sein (siehe README, Abschnitt Produktion).
+    app.default_media_dir: '%kernel.project_dir%/public/media'
+    app.media_dir: '%env(default:app.default_media_dir:resolve:MEDIA_DIR)%'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        bind:
+            string $mediaDir: '%app.media_dir%'
+            string $scanDir: '%env(resolve:SCAN_DIR)%'
+            string $mailerFrom: '%env(MAILER_FROM)%'
+            string $viteDevServer: '%env(VITE_DEV_SERVER)%'
+            string $publicDir: '%kernel.project_dir%/public'
+
+    App\:
+        resource: '../src/'
+
+when@test:
+    parameters:
+        app.default_media_dir: '%kernel.project_dir%/var/test-media'
