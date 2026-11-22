@@ -11,6 +11,7 @@ final class AiClients
         private readonly AiProvider $provider,
         private readonly GeminiClient $gemini,
         private readonly AnthropicClient $anthropic,
+        private readonly MistralClient $mistral,
     ) {
     }
 
@@ -18,6 +19,7 @@ final class AiClients
     {
         return match ($this->provider->name()) {
             AiProvider::ANTHROPIC => $this->anthropic,
+            AiProvider::MISTRAL => $this->mistral,
             default => $this->gemini,
         };
     }

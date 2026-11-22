@@ -15,12 +15,19 @@ final class AiProvider
 {
     public const GEMINI = 'gemini';
     public const ANTHROPIC = 'anthropic';
+    public const MISTRAL = 'mistral';
     public const FAKE = 'fake';
 
     /** Auswahl im Backend: Bezeichnung => Anbieter */
     public const CHOICES = [
         'Google Gemini' => self::GEMINI,
         'Anthropic Claude' => self::ANTHROPIC,
+        'Mistral AI' => self::MISTRAL,
+    ];
+
+    /** Höchstzahl Bilder pro Anfrage, falls der Anbieter eine hat (Mistral: laut Doku 8) */
+    private const MAX_IMAGES = [
+        self::MISTRAL => 8,
     ];
 
     public function __construct(
@@ -35,7 +42,7 @@ final class AiProvider
         return self::FAKE === $this->normalize($this->envProvider);
     }
 
-    /** gemini | anthropic (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
+    /** gemini | anthropic | mistral (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
     public function name(): string
     {
         return $this->resolve($this->settings->get()->getAiProvider());
@@ -63,8 +70,15 @@ final class AiProvider
         return match ($provider) {
             self::ANTHROPIC => 'Claude',
             self::GEMINI => 'Gemini',
+            self::MISTRAL => 'Mistral',
             default => $provider,
         };
+    }
+
+    /** Höchstzahl Bilder pro Anfrage beim aktiven Anbieter (null = keine feste Grenze) */
+    public function maxImages(): ?int
+    {
+        return $this->isFake() ? null : (self::MAX_IMAGES[$this->name()] ?? null);
     }
 
     private function normalize(string $value): string

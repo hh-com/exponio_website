@@ -141,7 +141,7 @@ final class DuplicateDetector
             return [[], null, null];
         }
         $this->progress->step(sprintf('Duplikatprüfung: %s vergleicht die Fotos mit %d Kandidat%s …', $this->progress->aiName(), \count($candidates), 1 === \count($candidates) ? '' : 'en'));
-        $request = $this->prompts->build($item, $candidates);
+        $request = $this->prompts->build($item, $candidates, $this->provider->maxImages());
         $response = ($this->provider->isFake() ? $this->fake : $this->ai)->compare($request);
 
         $byId = [];

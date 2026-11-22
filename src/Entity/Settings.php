@@ -135,6 +135,10 @@ class Settings implements TranslatableInterface
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $anthropicApiKey = null;
 
+    /** Mistral-API-Key, verschlüsselt (App\Ai\SecretBox) */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $mistralApiKey = null;
+
     /** Dürfen KI-Crawler (GPTBot, ClaudeBot, …) die Seite lesen? */
     #[ORM\Column]
     private bool $allowAiCrawlers = true;
@@ -477,6 +481,7 @@ class Settings implements TranslatableInterface
     {
         return match ($provider) {
             'anthropic' => $this->anthropicApiKey,
+            'mistral' => $this->mistralApiKey,
             default => $this->geminiApiKey,
         };
     }
@@ -485,6 +490,7 @@ class Settings implements TranslatableInterface
     {
         match ($provider) {
             'anthropic' => $this->anthropicApiKey = $encrypted,
+            'mistral' => $this->mistralApiKey = $encrypted,
             default => $this->geminiApiKey = $encrypted,
         };
 

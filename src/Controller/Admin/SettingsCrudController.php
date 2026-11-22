@@ -132,7 +132,7 @@ class SettingsCrudController extends AbstractCrudController
             ->setFormTypeOption('always_empty', true)
             ->setFormTypeOption('attr', ['autocomplete' => 'new-password'])
             ->setColumns(5)->onlyOnForms()
-            ->setHelp('Nur ausfüllen, um den Key zu setzen oder zu ändern. Er wird für den gewählten Anbieter verschlüsselt gespeichert und nie wieder angezeigt. Gemini: https://aistudio.google.com/apikey, Claude: https://console.anthropic.com/settings/keys – für den Datenschutz jeweils einen bezahlten Tarif verwenden.');
+            ->setHelp('Nur ausfüllen, um den Key zu setzen oder zu ändern. Er wird für den gewählten Anbieter verschlüsselt gespeichert und nie wieder angezeigt. Gemini: https://aistudio.google.com/apikey, Claude: https://console.anthropic.com/settings/keys, Mistral: https://console.mistral.ai/api-keys – für den Datenschutz jeweils einen bezahlten Tarif verwenden.');
         yield TextField::new('aiModel', 'Modell für die Erkennung')->setColumns(3)->hideOnIndex()
             ->setFormTypeOption('attr', ['placeholder' => $this->aiConfig->defaultModel()])
             ->setHelp('Leer = '.$this->aiConfig->defaultModel());

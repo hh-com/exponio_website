@@ -242,19 +242,22 @@ sowie eine Übersicht auf dem Dashboard.
 
 ---
 
-## 7. KI (Google Gemini oder Anthropic Claude)
+## 7. KI (Google Gemini, Anthropic Claude oder Mistral AI)
 
 - **Anbieter:** Backend → *Einstellungen* → Tab **KI** → „Anbieter“. Er gilt für alle Aufgaben (Erkennung,
   Duplikat-Vergleich, Übersetzung). Ohne Auswahl gilt `AI_PROVIDER` aus `.env`. Beim Wechsel werden die
   Modellnamen zurückgesetzt, weil sie nur für den bisherigen Anbieter gelten.
 - **Key:** Im selben Tab → „Neuer API-Key“; er wird für den gewählten Anbieter gespeichert (je Anbieter ein eigener
   Key). Der Key wird mit libsodium verschlüsselt gespeichert (Schlüssel aus `APP_SECRET`) und nie wieder angezeigt.
-  Steht `GEMINI_API_KEY` bzw. `ANTHROPIC_API_KEY` in `.env.local`, hat dieser Vorrang. „KI-Verbindung testen“
+  Steht `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` in `.env.local`, hat dieser Vorrang. „KI-Verbindung testen“
   prüft Key und Modell des aktiven Anbieters.
 - **Schnittstelle Gemini:** Gemini Interactions API (seit Juni 2026 Googles Standard), Antwort als JSON nach festem
   Schema, Bilder als Base64, `store: false`.
 - **Schnittstelle Claude:** Messages API, Bilder als Base64. Das JSON-Schema wird als Werkzeug übergeben, das Claude
   aufrufen muss (`tool_choice`); dessen Eingaben sind das Ergebnis.
+- **Schnittstelle Mistral:** Chat Completions API, Antwort als JSON nach Schema (`json_schema`, `strict`), Bilder
+  als Data-URI. Mistral nimmt höchstens 8 Bilder pro Anfrage: Die Erkennung schickt ohnehin höchstens 4, der
+  Duplikat-Vergleich verteilt die Fotos dann auf neues Objekt und Kandidaten (bei 3 Kandidaten 2 + 3 × 2).
 - **Überlastung:** Bei 429/5xx (Claude auch 529) wiederholt die Website eine Anfrage bis zu dreimal (nach 2, 4 und
   8 s, oder so lange, wie der Anbieter per `Retry-After` verlangt), siehe `App\Ai\AiRetryStrategy`.
 - **Wartestatus im Backend:** Löst du im Backend eine KI-Aufgabe aus („KI-Erkennung“, „Jetzt übersetzen“,
@@ -268,9 +271,11 @@ sowie eine Übersicht auf dem Dashboard.
   Fehler und „läuft“. Auch alle `addFlash()`-Meldungen des Backends erscheinen so
   (`templates/bundles/EasyAdminBundle/flash_messages.html.twig`). Fehler bleiben bis zum Schließen stehen.
 - **Modelle:** Gemini: Standard `gemini-3.8-flash` (Erkennung) und `gemini-3.5-flash-lite` (Übersetzung). Claude:
-  Standard `claude-sonnet-5-5` (Erkennung) und `claude-haiku-5-5` (Übersetzung). Alle änderbar im Backend bzw. in
-  `.env` (`GEMINI_MODEL`, `GEMINI_TRANSLATION_MODEL`, `ANTHROPIC_MODEL`, `ANTHROPIC_TRANSLATION_MODEL`).
-  Aktuelle Listen: <https://ai.google.dev/gemini-api/docs/models>, <https://docs.claude.com/en/docs/about-claude/models>.
+  Standard `claude-sonnet-5-5` (Erkennung) und `claude-haiku-5-5` (Übersetzung). Mistral: Standard
+  `mistral-large-latest` (Erkennung, braucht Bildeingabe) und `mistral-small-latest` (Übersetzung). Alle änderbar im
+  Backend bzw. in `.env` (`GEMINI_MODEL`, `GEMINI_TRANSLATION_MODEL`, `ANTHROPIC_MODEL`, `ANTHROPIC_TRANSLATION_MODEL`,
+  `MISTRAL_MODEL`, `MISTRAL_TRANSLATION_MODEL`). Aktuelle Listen: <https://ai.google.dev/gemini-api/docs/models>,
+  <https://docs.claude.com/en/docs/about-claude/models>, <https://docs.mistral.ai/models>.
 - **Prompts:** Alle drei Prompts sind im Backend editierbar: Erkennung, Übersetzung und Duplikat-Vergleich.
   Platzhalter `{{objektarten}}`, `{{laender}}`, `{{themen}}` und `{{sprache}}` füllt die Website. Das Antwortformat
   (JSON-Schema) bleibt im Code. Vorschauen zeigen den fertigen Erkennungs-Prompt und den Vergleichsauftrag für das
@@ -280,7 +285,8 @@ sowie eine Übersicht auf dem Dashboard.
   gibt es dort den Schalter „Veröffentlichte Objekte automatisch aktualisieren“ (Standard aus: nur vorschlagen). Der
   Vergleich nutzt das Modell der Erkennung und kostet einen zusätzlichen Aufruf, aber nur, wenn die Vorauswahl
   Kandidaten findet.
-- **Datenschutz:** Nur Objektfotos und Website-Texte gehen an Google, keine Besucherdaten. Laut den Gemini-Bedingungen
+- **Datenschutz:** Nur Objektfotos und Website-Texte gehen an den gewählten Anbieter, keine Besucherdaten. Für Claude
+  und Mistral gelten deren API-Bedingungen; prüfe sie vor dem Wechsel. Laut den Gemini-Bedingungen
   (Stand 23.03.2026) gelten für Nutzer im EWR, in der Schweiz und in Großbritannien die Datenregeln der bezahlten
   Dienste. Das heißt: keine Nutzung zum Training. Empfohlen ist trotzdem ein Projekt mit Abrechnungskonto.
   Bedingungen: <https://ai.google.dev/gemini-api/terms>
@@ -367,7 +373,7 @@ es entstehen keine API-Kosten. Für die Browser-Tests einmalig `npx playwright i
 ```
 assets/                            Frontend (Vue-Islands, Tailwind) und Backend-Prüf-App
 src/
-  Ai/                              AiProvider, AiClients, GeminiClient, AnthropicClient, AiCredentials, SecretBox, AiConfig, DefaultPrompts
+  Ai/                              AiProvider, AiClients, GeminiClient, AnthropicClient, MistralClient, AiCredentials, AiProgress, AiRetryStrategy, SecretBox, AiConfig, DefaultPrompts
   Recognition/                     PromptBuilder, AiRecognizer, FakeRecognizer, RecognitionApplier
   Duplicate/                       CandidateFinder, ComparisonPromptBuilder, AiComparer, FakeComparer, DuplicateDetector, DuplicateMerger
   Translation/                     TranslationRunner, MachineTranslator, PlaceholderGuard, TranslatableTrait

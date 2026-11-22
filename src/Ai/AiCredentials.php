@@ -8,7 +8,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Woher kommt der API-Key des Anbieters?
  *
- * 1. GEMINI_API_KEY bzw. ANTHROPIC_API_KEY in .env.local (hat Vorrang)
+ * 1. GEMINI_API_KEY, ANTHROPIC_API_KEY bzw. MISTRAL_API_KEY in .env.local (hat Vorrang)
  * 2. sonst der im Backend eingegebene, verschlüsselt gespeicherte Key
  *
  * Ohne Anbieter-Angabe gilt der aktive Anbieter (App\Ai\AiProvider).
@@ -23,6 +23,8 @@ final class AiCredentials
         private readonly ?string $geminiEnvKey,
         #[Autowire('%env(default::ANTHROPIC_API_KEY)%')]
         private readonly ?string $anthropicEnvKey,
+        #[Autowire('%env(default::MISTRAL_API_KEY)%')]
+        private readonly ?string $mistralEnvKey,
         private readonly SettingsProvider $settings,
         private readonly SecretBox $box,
         private readonly AiProvider $provider,
@@ -91,6 +93,7 @@ final class AiCredentials
     {
         return trim((string) match ($provider) {
             AiProvider::ANTHROPIC => $this->anthropicEnvKey,
+            AiProvider::MISTRAL => $this->mistralEnvKey,
             default => $this->geminiEnvKey,
         });
     }

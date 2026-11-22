@@ -9,8 +9,10 @@ use App\Ai\AiProgress;
 use App\Ai\AiProvider;
 use App\Ai\AiRetryStrategy;
 use App\Ai\AnthropicClient;
+use App\Ai\MistralClient;
 use App\Ai\GeminiClient;
 use App\Ai\SecretBox;
+use App\Duplicate\ComparisonPromptBuilder;
 use App\Entity\Settings;
 use App\Service\SettingsProvider;
 use App\Translation\PlaceholderGuard;
@@ -189,6 +191,87 @@ final class AiTest extends TestCase
         (new GeminiClient(new MockHttpClient(), $this->credentials(null)))->generateJson('m', [], []);
     }
 
+    public function testMistralRequestAndResponse(): void
+    {
+        $sent = [];
+        $http = new MockHttpClient(function (string $method, string $url, array $options) use (&$sent): MockResponse {
+            $sent = ['url' => $url, 'headers' => $options['headers'], 'body' => json_decode($options['body'], true)];
+
+            return new MockResponse((string) json_encode([
+                'model' => 'mistral-large-2611',
+                'choices' => [['index' => 0, 'finish_reason' => 'stop', 'message' => ['role' => 'assistant', 'content' => '{"title": "Bund 1955", "confidence": 0.9}']]],
+            ]));
+        }, 'https://api.mistral.ai/v1/');
+
+        $schema = ['type' => 'object', 'additionalProperties' => false, 'required' => ['title'], 'properties' => ['title' => ['type' => 'string']]];
+        $result = (new MistralClient($http, $this->credentials(null, null, 'mis-key')))->generateJson('mistral-large-latest', [AiInput::text('Prompt'), AiInput::image('QUJD', 'image/webp')], $schema);
+
+        self::assertSame(['title' => 'Bund 1955', 'confidence' => 0.9], $result['data']);
+        self::assertSame('mistral-large-2611', $result['model']);
+        self::assertSame('https://api.mistral.ai/v1/chat/completions', $sent['url']);
+        self::assertContains('Authorization: Bearer mis-key', $sent['headers']);
+        self::assertSame('mistral-large-latest', $sent['body']['model']);
+        self::assertSame(['type' => 'text', 'text' => 'Prompt'], $sent['body']['messages'][0]['content'][0]);
+        self::assertSame(['type' => 'image_url', 'image_url' => 'data:image/webp;base64,QUJD'], $sent['body']['messages'][0]['content'][1]);
+        self::assertSame(['type' => 'json_schema', 'json_schema' => ['name' => 'antwort', 'schema' => $schema, 'strict' => true]], $sent['body']['response_format']);
+    }
+
+    public function testMistralReadsTextChunksAndReportsErrors(): void
+    {
+        // Modelle mit Denkschritten liefern den Inhalt als Liste von Teilen
+        $http = new MockHttpClient(new MockResponse((string) json_encode(['choices' => [['finish_reason' => 'stop', 'message' => ['content' => [
+            ['type' => 'thinking', 'thinking' => [['type' => 'text', 'text' => 'nachdenken']]],
+            ['type' => 'text', 'text' => '{"ok": true}'],
+        ]]]]])));
+        self::assertSame(['ok' => true], (new MistralClient($http, $this->credentials(null, null, 'k')))->generateJson('m', [AiInput::text('x')], ['type' => 'object'])['data']);
+
+        $cases = [
+            [new MockResponse('{"object":"error","message":"Invalid model: foo","type":"invalid_request_error"}', ['http_code' => 400]), 'Mistral-Fehler 400: Invalid model: foo'],
+            [new MockResponse('{"detail":"Unauthorized"}', ['http_code' => 401]), 'Mistral-Fehler 401: Unauthorized'],
+            [new MockResponse('{"choices":[{"finish_reason":"length","message":{"content":"{\\"a\\":"}}]}'), 'abgeschnitten'],
+        ];
+        foreach ($cases as [$response, $expected]) {
+            try {
+                (new MistralClient(new MockHttpClient($response), $this->credentials(null, null, 'k')))->generateJson('m', [AiInput::text('x')], ['type' => 'object']);
+                self::fail('Fehler erwartet: '.$expected);
+            } catch (AiException $e) {
+                self::assertStringContainsString($expected, $e->getMessage());
+            }
+        }
+
+        $nine = array_fill(0, 9, AiInput::image('QUJD', 'image/webp'));
+        try {
+            (new MistralClient(new MockHttpClient(), $this->credentials(null, null, 'k')))->generateJson('m', $nine, ['type' => 'object']);
+            self::fail('Bildgrenze erwartet');
+        } catch (AiException $e) {
+            self::assertStringContainsString('höchstens 8 Bilder', $e->getMessage());
+        }
+
+        $this->expectException(AiException::class);
+        $this->expectExceptionMessage('Kein Mistral-API-Key');
+        (new MistralClient(new MockHttpClient(), $this->credentials(null)))->generateJson('m', [], []);
+    }
+
+    public function testComparisonImagesFitTheProviderLimit(): void
+    {
+        self::assertSame([4, 2], ComparisonPromptBuilder::imagePlan(3, null), 'ohne Grenze wie bisher');
+        self::assertSame([4, 2], ComparisonPromptBuilder::imagePlan(2, 8));
+        self::assertSame([2, 2], ComparisonPromptBuilder::imagePlan(3, 8));
+        foreach ([1, 2, 3] as $candidates) {
+            [$new, $each] = ComparisonPromptBuilder::imagePlan($candidates, MistralClient::MAX_IMAGES);
+            self::assertLessThanOrEqual(MistralClient::MAX_IMAGES, $new + $candidates * $each);
+            self::assertGreaterThanOrEqual(1, $new);
+            self::assertGreaterThanOrEqual(1, $each);
+        }
+
+        $settings = $this->settings();
+        $settings->get()->setAiProvider(AiProvider::MISTRAL);
+        self::assertSame(MistralClient::MAX_IMAGES, (new AiProvider('gemini', $settings))->maxImages());
+        self::assertNull((new AiProvider('fake', $settings))->maxImages(), 'Testmodus: keine Grenze');
+        $settings->get()->setAiProvider(AiProvider::ANTHROPIC);
+        self::assertNull((new AiProvider('gemini', $settings))->maxImages());
+    }
+
     public function testProgressIsStoredPerRequestId(): void
     {
         $cache = new ArrayAdapter();
@@ -250,14 +333,14 @@ final class AiTest extends TestCase
         self::assertFalse(PlaceholderGuard::isValid('Text', '   '));
     }
 
-    private function credentials(?string $geminiKey, ?string $anthropicKey = null): AiCredentials
+    private function credentials(?string $geminiKey, ?string $anthropicKey = null, ?string $mistralKey = null): AiCredentials
     {
-        return $this->creds($geminiKey, $anthropicKey, $this->settings(), new SecretBox('geheim'));
+        return $this->creds($geminiKey, $anthropicKey, $this->settings(), new SecretBox('geheim'), $mistralKey);
     }
 
-    private function creds(?string $geminiKey, ?string $anthropicKey, SettingsProvider $settings, SecretBox $box): AiCredentials
+    private function creds(?string $geminiKey, ?string $anthropicKey, SettingsProvider $settings, SecretBox $box, ?string $mistralKey = null): AiCredentials
     {
-        return new AiCredentials($geminiKey, $anthropicKey, $settings, $box, new AiProvider('gemini', $settings));
+        return new AiCredentials($geminiKey, $anthropicKey, $mistralKey, $settings, $box, new AiProvider('gemini', $settings));
     }
 
     private function settings(): SettingsProvider

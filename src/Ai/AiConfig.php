@@ -22,6 +22,10 @@ final class AiConfig
         private readonly string $anthropicModel,
         #[Autowire('%env(ANTHROPIC_TRANSLATION_MODEL)%')]
         private readonly string $anthropicTranslationModel,
+        #[Autowire('%env(MISTRAL_MODEL)%')]
+        private readonly string $mistralModel,
+        #[Autowire('%env(MISTRAL_TRANSLATION_MODEL)%')]
+        private readonly string $mistralTranslationModel,
     ) {
     }
 
@@ -52,11 +56,19 @@ final class AiConfig
 
     public function defaultModel(): string
     {
-        return AiProvider::ANTHROPIC === $this->provider->name() ? $this->anthropicModel : $this->geminiModel;
+        return match ($this->provider->name()) {
+            AiProvider::ANTHROPIC => $this->anthropicModel,
+            AiProvider::MISTRAL => $this->mistralModel,
+            default => $this->geminiModel,
+        };
     }
 
     public function defaultTranslationModel(): string
     {
-        return AiProvider::ANTHROPIC === $this->provider->name() ? $this->anthropicTranslationModel : $this->geminiTranslationModel;
+        return match ($this->provider->name()) {
+            AiProvider::ANTHROPIC => $this->anthropicTranslationModel,
+            AiProvider::MISTRAL => $this->mistralTranslationModel,
+            default => $this->geminiTranslationModel,
+        };
     }
 }

@@ -11,10 +11,11 @@ use App\Enum\Specimen;
 use App\Media\MediaStorage;
 
 /**
- * Stufe 2 der Duplikat-Erkennung: baut den Vergleichsauftrag für Gemini – Prompt (aus den Einstellungen),
+ * Stufe 2 der Duplikat-Erkennung: baut den Vergleichsauftrag für die KI – Prompt (aus den Einstellungen),
  * Angaben zum neuen Objekt und zu den Kandidaten, die Fotos aller Objekte und das JSON-Schema der Antwort.
  *
- * Reihenfolge für Geminis automatisches Caching: erst der feste Prompt, dann die wechselnden Teile.
+ * Reihenfolge für automatisches Caching (Gemini): erst der feste Prompt, dann die wechselnden Teile.
+ * Hat der Anbieter eine Höchstzahl Bilder pro Anfrage (Mistral: 8), werden die Fotos darauf verteilt (imagePlan()).
  */
 final class ComparisonPromptBuilder
 {
@@ -29,23 +30,44 @@ final class ComparisonPromptBuilder
     ) {
     }
 
-    /** @param list<Candidate> $candidates */
-    public function build(Item $item, array $candidates): ComparisonRequest
+    /**
+     * @param list<Candidate> $candidates
+     * @param int|null        $maxImages  Höchstzahl Bilder pro Anfrage beim Anbieter (null = keine)
+     */
+    public function build(Item $item, array $candidates, ?int $maxImages = null): ComparisonRequest
     {
+        [$newImages, $candidateImages] = self::imagePlan(\count($candidates), $maxImages);
         $images = [];
-        foreach ($this->pick($item, self::MAX_NEW_IMAGES) as $n => $image) {
+        foreach ($this->pick($item, $newImages) as $n => $image) {
             $images[] = $this->image(sprintf('Neues Objekt – Bild %d', $n + 1), $image);
         }
         if ([] === $images) {
             throw new AiException('Das neue Objekt hat keine Bilder.');
         }
         foreach ($candidates as $candidate) {
-            foreach ($this->pick($candidate->item, self::MAX_CANDIDATE_IMAGES, true) as $n => $image) {
+            foreach ($this->pick($candidate->item, $candidateImages, true) as $n => $image) {
                 $images[] = $this->image(sprintf('Kandidat #%d – Bild %d', $candidate->item->getId(), $n + 1), $image);
             }
         }
 
-        return new ComparisonRequest($item, $candidates, $this->config->duplicatePrompt(), $this->text($item, $candidates), $images, $this->schema());
+        return new ComparisonRequest($item, $candidates, $this->config->duplicatePrompt(), $this->text($item, $candidates, $maxImages), $images, $this->schema());
+    }
+
+    /**
+     * Wie viele Fotos des neuen Objekts und je Kandidat? Ohne Grenze 4 und 2. Mit Grenze bekommt jeder Kandidat
+     * mindestens ein Foto, das neue Objekt den Rest (höchstens 4), z. B. bei 8 Bildern und 3 Kandidaten: 2 + 3 × 2.
+     *
+     * @return array{int, int} [Fotos neues Objekt, Fotos je Kandidat]
+     */
+    public static function imagePlan(int $candidates, ?int $maxImages): array
+    {
+        if (null === $maxImages || 0 === $candidates || $maxImages >= self::MAX_NEW_IMAGES + $candidates * self::MAX_CANDIDATE_IMAGES) {
+            return [self::MAX_NEW_IMAGES, self::MAX_CANDIDATE_IMAGES];
+        }
+        $perCandidate = max(1, min(self::MAX_CANDIDATE_IMAGES, intdiv($maxImages - 1, $candidates)));
+        $new = max(1, min(self::MAX_NEW_IMAGES, $maxImages - $candidates * $perCandidate));
+
+        return [$new, $perCandidate];
     }
 
     /**
@@ -53,18 +75,19 @@ final class ComparisonPromptBuilder
      *
      * @param list<Candidate> $candidates
      */
-    public function text(Item $item, array $candidates): string
+    public function text(Item $item, array $candidates, ?int $maxImages = null): string
     {
+        [$newImages, $candidateImages] = self::imagePlan(\count($candidates), $maxImages);
         $lines = [
             sprintf('Vergleiche das neue Objekt mit %d Kandidat%s. Die Bilder folgen in dieser Reihenfolge: erst das neue Objekt, dann die Kandidaten.', \count($candidates), 1 === \count($candidates) ? '' : 'en'),
             '',
             'NEUES OBJEKT'.(null !== $item->getSourceFolder() ? ' (Upload '.$item->getSourceFolder().')' : '').':',
-            $this->describe($item, self::MAX_NEW_IMAGES, false),
+            $this->describe($item, $newImages, false),
         ];
         foreach ($candidates as $candidate) {
             $lines[] = '';
             $lines[] = sprintf('KANDIDAT #%d (Vorauswahl: %s):', $candidate->item->getId(), [] === $candidate->reasons ? 'ähnliche Angaben' : implode(', ', $candidate->reasons));
-            $lines[] = $this->describe($candidate->item, self::MAX_CANDIDATE_IMAGES, true);
+            $lines[] = $this->describe($candidate->item, $candidateImages, true);
         }
 
         return implode("\n", $lines);
