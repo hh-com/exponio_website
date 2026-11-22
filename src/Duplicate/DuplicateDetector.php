@@ -2,6 +2,7 @@
 
 namespace App\Duplicate;
 
+use App\Ai\AiProgress;
 use App\Ai\AiProvider;
 use App\Entity\Item;
 use App\Enum\DuplicateStatus;
@@ -15,7 +16,7 @@ use Psr\Log\LoggerInterface;
  * Duplikat-Erkennung nach der KI-Erkennung eines neuen Uploads:
  *
  * 1. Vorauswahl ohne KI (CandidateFinder): höchstens drei Kandidaten.
- * 2. Ein Gemini-Aufruf vergleicht die neuen Fotos mit den Kandidaten (AI_PROVIDER=fake: FakeComparer).
+ * 2. Ein KI-Aufruf vergleicht die neuen Fotos mit den Kandidaten (AI_PROVIDER=fake: FakeComparer).
  * 3. Entscheidung nach den Schwellen aus Einstellungen → KI:
  *    - Sicherheit ≥ „sicher ab“: Upload dem vorhandenen Objekt zuordnen (DuplicateMerger), kein neues Objekt.
  *    - Sicherheit ≥ „Hinweis ab“: neues Objekt bleibt Entwurf mit Hinweis „mögliches Duplikat von #ID“.
@@ -29,13 +30,14 @@ final class DuplicateDetector
         private readonly AiProvider $provider,
         private readonly CandidateFinder $finder,
         private readonly ComparisonPromptBuilder $prompts,
-        private readonly GeminiComparer $gemini,
+        private readonly AiComparer $ai,
         private readonly FakeComparer $fake,
         private readonly DuplicateMerger $merger,
         private readonly SettingsProvider $settings,
         private readonly ItemRepository $items,
         private readonly EntityManagerInterface $em,
         private readonly LoggerInterface $logger,
+        private readonly AiProgress $progress,
     ) {
     }
 
@@ -133,12 +135,14 @@ final class DuplicateDetector
      */
     private function evaluate(Item $item, bool $olderOnly): array
     {
+        $this->progress->step('Duplikatprüfung: suche ähnliche Objekte …');
         $candidates = $this->finder->find($item, $olderOnly);
         if ([] === $candidates) {
             return [[], null, null];
         }
+        $this->progress->step(sprintf('Duplikatprüfung: %s vergleicht die Fotos mit %d Kandidat%s …', $this->progress->aiName(), \count($candidates), 1 === \count($candidates) ? '' : 'en'));
         $request = $this->prompts->build($item, $candidates);
-        $response = ($this->provider->isFake() ? $this->fake : $this->gemini)->compare($request);
+        $response = ($this->provider->isFake() ? $this->fake : $this->ai)->compare($request);
 
         $byId = [];
         foreach ($candidates as $candidate) {

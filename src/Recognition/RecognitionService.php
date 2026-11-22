@@ -2,6 +2,7 @@
 
 namespace App\Recognition;
 
+use App\Ai\AiProgress;
 use App\Ai\AiProvider;
 use App\Duplicate\DuplicateDetector;
 use App\Duplicate\DuplicateOutcome;
@@ -12,7 +13,7 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Führt die Erkennung für ein Objekt aus und speichert Ergebnis oder Fehler.
- * AI_PROVIDER=gemini (Standard) oder fake (Entwicklung und Tests ohne API-Key).
+ * KI-Anbieter laut Einstellungen (Gemini, Claude) oder AI_PROVIDER=fake (Entwicklung und Tests ohne API-Key).
  *
  * Bei frisch importierten Objekten folgt direkt die Duplikatprüfung. Ist es ein sicheres Duplikat, wird das
  * Objekt dem vorhandenen zugeordnet und gelöscht – Item::getMergedUpload() zeigt dann den Upload beim vorhandenen Objekt.
@@ -23,7 +24,7 @@ final class RecognitionService
 
     public function __construct(
         private readonly AiProvider $provider,
-        private readonly GeminiRecognizer $gemini,
+        private readonly AiRecognizer $ai,
         private readonly FakeRecognizer $fake,
         private readonly PromptBuilder $prompts,
         private readonly RecognitionApplier $applier,
@@ -31,6 +32,7 @@ final class RecognitionService
         private readonly ItemRepository $items,
         private readonly EntityManagerInterface $em,
         private readonly LoggerInterface $logger,
+        private readonly AiProgress $progress,
     ) {
         $this->lastDuplicate = new DuplicateOutcome(DuplicateOutcome::SKIPPED);
     }
@@ -50,8 +52,12 @@ final class RecognitionService
     {
         $this->lastDuplicate = new DuplicateOutcome(DuplicateOutcome::SKIPPED);
         try {
+            $this->progress->step('Fotos und Prompt werden vorbereitet …');
             $request = $this->prompts->build($item);
-            $response = ($this->isFake() ? $this->fake : $this->gemini)->recognize($request);
+            $photos = \count($request->images);
+            $this->progress->step(sprintf('%d Foto%s an %s gesendet – warte auf Antwort …', $photos, 1 === $photos ? '' : 's', $this->progress->aiName()));
+            $response = ($this->isFake() ? $this->fake : $this->ai)->recognize($request);
+            $this->progress->step('Antwort erhalten – Ergebnis wird übernommen …');
             $this->applier->apply($item, $response['data'], $response['model'], $request->areas);
             $this->em->flush();
             $this->lastDuplicate = $this->duplicates->checkImported($item);

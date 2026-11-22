@@ -110,10 +110,10 @@ export class ApiError extends Error {
 export function createApi(base: string, csrf: string) {
   const root = base.replace(/\/review\/?$/, '')
 
-  async function request<T>(url: string, body?: unknown): Promise<T> {
+  async function request<T>(url: string, body?: unknown, progressId?: string): Promise<T> {
     const response = await fetch(url, {
       method: body === undefined ? 'GET' : 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...(progressId ? { 'X-Progress-Id': progressId } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: 'same-origin',
     })
@@ -129,7 +129,8 @@ export function createApi(base: string, csrf: string) {
     queue: () => request<{ items: QueueItem[]; meta: Meta }>(base),
     item: (id: number) => request<{ item: ItemData }>(`${base}/${id}`),
     save: (id: number, data: Partial<ItemData> & { action: string }) => request<{ item: ItemData }>(`${base}/${id}`, data),
-    recognize: (id: number) => request<{ ok: boolean; error: string | null; item?: ItemData; merged?: MergedInfo; meta: Meta }>(`${base}/${id}/recognize`, {}),
+    /** progressId: Zwischenstand für den Toast (assets/admin/aiProgress.ts) */
+    recognize: (id: number, progressId?: string) => request<{ ok: boolean; error: string | null; item?: ItemData; merged?: MergedInfo; meta: Meta }>(`${base}/${id}/recognize`, {}, progressId),
     duplicate: (id: number, action: 'keep' | 'replace' | 'separate') => request<{ item?: ItemData; merged?: MergedInfo }>(`${base}/${id}/duplicate`, { action }),
     proposal: (id: number, uploadId: number, action: 'accept' | 'reject') => request<{ item: ItemData }>(`${base}/${id}/proposal/${uploadId}`, { action }),
     images: (id: number, order: number[], remove: number[]) => request<{ item: ItemData }>(`${base}/${id}/images`, { order, delete: remove }),

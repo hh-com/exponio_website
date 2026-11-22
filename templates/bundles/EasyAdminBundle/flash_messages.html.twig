@@ -1,0 +1,30 @@
+{#
+    Meldungen aus addFlash() erscheinen als Toast unten rechts (assets/lib/toast.ts, gestartet in assets/admin.ts).
+    Ohne JavaScript bleiben sie als Hinweisbox sichtbar. Ersetzt @EasyAdmin/flash_messages.html.twig.
+#}
+{% set ea = ea() %}
+{% trans_default_domain null != ea ? ea.i18n.translationDomain : (translation_domain is defined ? translation_domain ?? 'messages') %}
+
+{% set flash_messages = app.flashes %}
+
+{% if flash_messages|length > 0 %}
+    {% set toasts = [] %}
+    {% for label, messages in flash_messages %}
+        {% for message in messages %}
+            {# wie bei EasyAdmin: Text oder Array mit 'message' und 'title' #}
+            {% if message is iterable %}
+                {% set toasts = toasts|merge([{type: label, title: message.title is defined ? message.title|trans : null, message: (message.message ?? '')|trans}]) %}
+            {% else %}
+                {% set toasts = toasts|merge([{type: label, title: null, message: message|trans}]) %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    <script type="application/json" id="flash-toasts">{{ toasts|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP') b-or constant('JSON_UNESCAPED_UNICODE'))|raw }}</script>
+    <noscript>
+        <div id="flash-messages">
+            {% for toast in toasts %}
+                <div class="alert alert-{{ toast.type }}">{% if toast.title %}<strong>{{ toast.title }}</strong> {% endif %}{{ toast.message }}</div>
+            {% endfor %}
+        </div>
+    </noscript>
+{% endif %}

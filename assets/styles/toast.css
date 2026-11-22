@@ -1,0 +1,120 @@
+/* Hinweise unten rechts (assets/lib/toast.ts). Farben folgen EasyAdmin (hell/dunkel), mit Ersatzwerten. */
+.ps-toasts {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1090;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  width: min(380px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.ps-toast {
+  --ps-toast-accent: #6b7280;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.7rem 0.6rem 0.7rem 0.85rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-left: 4px solid var(--ps-toast-accent);
+  border-radius: 10px;
+  background: var(--dropdown-bg, var(--body-bg, #fff));
+  color: var(--text-color, #1f2937);
+  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.35);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(0.5rem);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.ps-toast.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.ps-toast--info { --ps-toast-accent: #3b82f6; }
+.ps-toast--success { --ps-toast-accent: #10b981; }
+.ps-toast--warning { --ps-toast-accent: #f59e0b; }
+.ps-toast--error { --ps-toast-accent: #ef4444; }
+.ps-toast--progress { --ps-toast-accent: #8b5cf6; }
+
+.ps-toast__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.05rem;
+  color: var(--ps-toast-accent);
+  font-size: 1rem;
+}
+.ps-toast__spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid color-mix(in srgb, var(--ps-toast-accent) 25%, transparent);
+  border-top-color: var(--ps-toast-accent);
+  border-radius: 50%;
+  animation: ps-toast-spin 0.8s linear infinite;
+}
+
+.ps-toast__body {
+  flex: 1;
+  min-width: 0;
+}
+.ps-toast__title {
+  display: block;
+  font-weight: 600;
+}
+.ps-toast__title[hidden],
+.ps-toast__meta[hidden] {
+  display: none;
+}
+.ps-toast__message {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ps-toast__meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-toast__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: -0.25rem 0 -0.25rem 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+}
+.ps-toast__close:hover,
+.ps-toast__close:focus-visible {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--text-color, #1f2937);
+}
+
+@keyframes ps-toast-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-toast {
+    transform: none;
+    transition: opacity 0.15s linear;
+  }
+  .ps-toast__spinner {
+    animation-duration: 2.4s;
+  }
+}

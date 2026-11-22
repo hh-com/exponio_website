@@ -2,10 +2,11 @@
 
 namespace App\Translation;
 
+use App\Ai\AiClients;
 use App\Ai\AiConfig;
+use App\Ai\AiInput;
 use App\Ai\AiProvider;
 use App\Ai\DefaultPrompts;
-use App\Ai\GeminiClient;
 use App\Entity\Language;
 
 /**
@@ -15,7 +16,7 @@ use App\Entity\Language;
 final class MachineTranslator
 {
     public function __construct(
-        private readonly GeminiClient $client,
+        private readonly AiClients $clients,
         private readonly AiConfig $config,
         private readonly AiProvider $provider,
     ) {
@@ -74,9 +75,9 @@ final class MachineTranslator
             ],
         ];
 
-        $result = $this->client->generateJson($this->config->translationModel(), [
-            GeminiClient::text($prompt),
-            GeminiClient::text("Zu übersetzende Einträge (JSON):\n".json_encode($entries, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)),
+        $result = $this->clients->active()->generateJson($this->config->translationModel(), [
+            AiInput::text($prompt),
+            AiInput::text("Zu übersetzende Einträge (JSON):\n".json_encode($entries, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)),
         ], $schema);
 
         $translated = [];

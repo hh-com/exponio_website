@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import SearchSelect from './SearchSelect.vue'
 import TopicPicker from './TopicPicker.vue'
 import { ApiError, createApi, type ItemData, type MergedInfo, type Meta, type QueueItem } from './api'
+import { AiProgressToast } from './aiProgress'
+import { toast } from '../lib/toast'
 
 const props = defineProps<{ api: string; csrf: string; fake: boolean }>()
 const api = createApi(props.api, props.csrf)
@@ -15,7 +17,6 @@ const original = ref<ItemData | null>(null)
 const form = ref<ItemData | null>(null)
 const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate'>('load')
 const batch = ref({ done: 0, total: 0 })
-const message = ref<{ type: 'success' | 'danger' | 'info'; text: string } | null>(null)
 const errors = ref<Record<string, string>>({})
 const activeImage = ref(0)
 
@@ -38,9 +39,9 @@ const area = computed(() => meta.value.areas.find((a) => a.id === form.value?.ar
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== JSON.stringify(original.value))
 const confidence = computed(() => form.value?.ai.confidence ?? null)
 
+/** Meldung als Toast (assets/lib/toast.ts) */
 function flash(type: 'success' | 'danger' | 'info', text: string) {
-  message.value = { type, text }
-  window.setTimeout(() => { if (message.value?.text === text) message.value = null }, 6000)
+  toast(type === 'danger' ? 'error' : type, text)
 }
 
 function setItem(item: ItemData) {
@@ -139,30 +140,40 @@ async function save(action: 'save' | 'publish' | 'archive' = 'save') {
   }
 }
 
-async function recognize(id: number, quiet = false): Promise<'ok' | 'merged' | 'failed'> {
+/**
+ * Erkennt ein Objekt. Mit progress zeigt der Toast den Zwischenstand vom Server; ohne quiet wird er
+ * am Ende zur Ergebnis-Meldung (im Stapel meldet recognizeAll() das Gesamtergebnis).
+ */
+async function recognize(id: number, quiet = false, progress?: AiProgressToast): Promise<'ok' | 'merged' | 'failed'> {
+  const report = (type: 'success' | 'danger' | 'info', text: string) => {
+    if (quiet) return
+    if (progress) progress.finish(type === 'danger' ? 'error' : type, text)
+    else flash(type, text)
+  }
   try {
-    const data = await api.recognize(id)
+    const data = await api.recognize(id, progress?.id)
     meta.value = data.meta
     if (data.merged) {
       await dropFromQueue(id)
-      if (!quiet) flash('success', mergedText(data.merged))
+      report('success', mergedText(data.merged))
       return 'merged'
     }
     const item = data.item
-    if (!item) return 'failed'
+    if (!item) {
+      report('danger', 'Erkennung fehlgeschlagen: leere Antwort.')
+      return 'failed'
+    }
     if (id === currentId.value) setItem(item)
     else {
       const entry = queue.value.find((q) => q.id === id)
       if (entry) Object.assign(entry, { title: item.title, status: item.status, confidence: item.ai.confidence, recognized: !!item.ai.recognizedAt, error: !!item.ai.error, duplicateOf: item.duplicate?.id ?? null })
     }
-    if (!quiet) {
-      if (!data.ok) flash('danger', `Erkennung fehlgeschlagen: ${data.error}`)
-      else if (item.duplicate) flash('info', `KI-Vorschlag übernommen. Mögliches Duplikat von #${item.duplicate.id} – bitte entscheiden.`)
-      else flash('success', 'KI-Vorschlag übernommen – bitte prüfen.')
-    }
+    if (!data.ok) report('danger', `Erkennung fehlgeschlagen: ${data.error}`)
+    else if (item.duplicate) report('info', `KI-Vorschlag übernommen. Mögliches Duplikat von #${item.duplicate.id} – bitte entscheiden.`)
+    else report('success', 'KI-Vorschlag übernommen – bitte prüfen.')
     return data.ok ? 'ok' : 'failed'
   } catch (e) {
-    if (!quiet) flash('danger', (e as Error).message)
+    report('danger', (e as Error).message)
     return 'failed'
   }
 }
@@ -171,7 +182,7 @@ async function recognizeCurrent() {
   if (!form.value) return
   if (dirty.value && !confirm('Die KI überschreibt die Felder. Ungespeicherte Änderungen gehen verloren. Fortfahren?')) return
   busy.value = 'recognize'
-  await recognize(form.value.id)
+  await recognize(form.value.id, false, new AiProgressToast('KI-Erkennung läuft'))
   busy.value = ''
 }
 
@@ -180,16 +191,21 @@ async function recognizeAll() {
   if (!ids.length) return
   busy.value = 'batch'
   batch.value = { done: 0, total: ids.length }
+  const progress = new AiProgressToast(`KI-Erkennung: 1 von ${ids.length}`)
   let failed = 0
   let merged = 0
-  for (const id of ids) {
-    const result = await recognize(id, true)
+  for (const [n, id] of ids.entries()) {
+    if (n > 0) {
+      progress.next('Anfrage wird gesendet …')
+      progress.toast.update({ title: `KI-Erkennung: ${n + 1} von ${ids.length}` })
+    }
+    const result = await recognize(id, true, progress)
     if (result === 'failed') failed++
     if (result === 'merged') merged++
     batch.value.done++
   }
   busy.value = ''
-  flash(failed ? 'danger' : 'success', `${ids.length - failed} von ${ids.length} erkannt${merged ? `, davon ${merged} als Duplikat einem vorhandenen Objekt zugeordnet` : ''}${failed ? `, ${failed} fehlgeschlagen` : ''}.`)
+  progress.finish(failed ? 'error' : 'success', `${ids.length - failed} von ${ids.length} erkannt${merged ? `, davon ${merged} als Duplikat einem vorhandenen Objekt zugeordnet` : ''}${failed ? `, ${failed} fehlgeschlagen (Filter „Fehler“)` : ''}.`)
 }
 
 async function decideDuplicate(action: 'keep' | 'replace' | 'separate') {
@@ -234,14 +250,15 @@ async function decideProposal(uploadId: number, action: 'accept' | 'reject') {
 
 async function scan() {
   busy.value = 'scan'
+  const status = toast('progress', 'Neue Upload-Ordner werden importiert …', { title: 'Ordner scannen' })
   try {
     const result = await api.scan()
     const failed = Object.entries(result.failed)
-    flash(failed.length ? 'danger' : 'success', `${result.imported} neue Ordner importiert.${failed.length ? ' Fehler: ' + failed.map(([f, m]) => `${f}: ${m}`).join('; ') : ''}`)
+    status.update({ type: failed.length ? 'error' : 'success', title: null, message: `${result.imported} neue Ordner importiert.${failed.length ? ' Fehler: ' + failed.map(([f, m]) => `${f}: ${m}`).join('; ') : ''}` })
     busy.value = ''
     await loadQueue(form.value === null)
   } catch (e) {
-    flash('danger', (e as Error).message)
+    status.update({ type: 'error', title: null, message: (e as Error).message })
     busy.value = ''
   }
 }
@@ -342,7 +359,6 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
     <div v-if="fake" class="alert alert-warning tw:mb-4">
       Testmodus: <code>AI_PROVIDER=fake</code> – es werden Beispieldaten statt echter KI-Ergebnisse erzeugt.
     </div>
-    <div v-if="message" class="alert tw:mb-4" :class="`alert-${message.type}`">{{ message.text }}</div>
 
     <div v-if="busy === 'load' && !queue.length" class="tw:py-10 tw:text-center tw:opacity-60">Lädt …</div>
 

@@ -2,21 +2,73 @@
 
 namespace App\Ai;
 
+use App\Service\SettingsProvider;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * AI_PROVIDER=gemini (Standard) oder fake (Entwicklung und Tests ohne API-Key, ohne Kosten).
+ * Welcher KI-Anbieter ist aktiv?
+ *
+ * AI_PROVIDER=fake (Entwicklung und Tests ohne API-Key, ohne Kosten) hat immer Vorrang.
+ * Sonst gilt die Auswahl im Backend (Einstellungen → KI), ohne Auswahl der Wert aus AI_PROVIDER.
  */
 final class AiProvider
 {
+    public const GEMINI = 'gemini';
+    public const ANTHROPIC = 'anthropic';
+    public const FAKE = 'fake';
+
+    /** Auswahl im Backend: Bezeichnung => Anbieter */
+    public const CHOICES = [
+        'Google Gemini' => self::GEMINI,
+        'Anthropic Claude' => self::ANTHROPIC,
+    ];
+
     public function __construct(
         #[Autowire('%env(AI_PROVIDER)%')]
-        private readonly string $provider,
+        private readonly string $envProvider,
+        private readonly SettingsProvider $settings,
     ) {
     }
 
     public function isFake(): bool
     {
-        return 'fake' === strtolower(trim($this->provider));
+        return self::FAKE === $this->normalize($this->envProvider);
+    }
+
+    /** gemini | anthropic (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
+    public function name(): string
+    {
+        return $this->resolve($this->settings->get()->getAiProvider());
+    }
+
+    /** Wirksamer Anbieter für eine Auswahl im Backend (null = AI_PROVIDER aus .env) */
+    public function resolve(?string $chosen): string
+    {
+        if (null !== $chosen && \in_array($chosen, self::CHOICES, true)) {
+            return $chosen;
+        }
+        $env = $this->normalize($this->envProvider);
+
+        return \in_array($env, self::CHOICES, true) ? $env : self::GEMINI;
+    }
+
+    public static function label(string $provider): string
+    {
+        return (string) (array_search($provider, self::CHOICES, true) ?: $provider);
+    }
+
+    /** Kurzname für Statusmeldungen, z. B. „Claude“ */
+    public static function shortLabel(string $provider): string
+    {
+        return match ($provider) {
+            self::ANTHROPIC => 'Claude',
+            self::GEMINI => 'Gemini',
+            default => $provider,
+        };
+    }
+
+    private function normalize(string $value): string
+    {
+        return strtolower(trim($value));
     }
 }

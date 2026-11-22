@@ -10,6 +10,10 @@ framework:
             content.cache:
                 adapter: cache.app
                 tags: true
+            # Zwischenstand laufender KI-Aufgaben fürs Backend (App\Ai\AiProgress)
+            ai_progress.cache:
+                adapter: cache.app
+                default_lifetime: 900
 
 when@test:
     framework:

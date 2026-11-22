@@ -5,8 +5,9 @@ namespace App\Controller\Admin;
 use App\Ai\AiConfig;
 use App\Ai\AiProvider;
 use App\Ai\DefaultPrompts;
-use App\Ai\GeminiClient;
-use App\Ai\GeminiCredentials;
+use App\Ai\AiClients;
+use App\Ai\AiCredentials;
+use App\Ai\AiProgress;
 use App\Duplicate\DuplicateDetector;
 use App\Entity\Settings;
 use App\Form\Admin\TranslationType;
@@ -36,14 +37,14 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 /**
- * Einstellungen der Website (Name, Logo, Texte), KI (Gemini-Key, Modelle, Prompts, Duplikat-Erkennung), Import, Datenschutz und Suchmaschinen.
+ * Einstellungen der Website (Name, Logo, Texte), KI (Anbieter, API-Key, Modelle, Prompts, Duplikat-Erkennung), Import, Datenschutz und Suchmaschinen.
  *
  * @extends AbstractCrudController<Settings>
  */
 class SettingsCrudController extends AbstractCrudController
 {
     public function __construct(
-        private readonly GeminiCredentials $credentials,
+        private readonly AiCredentials $credentials,
         private readonly AiConfig $aiConfig,
         private readonly AiProvider $aiProvider,
         private readonly PromptBuilder $prompts,
@@ -75,9 +76,10 @@ class SettingsCrudController extends AbstractCrudController
         return $actions
             ->disable(Action::NEW, Action::DELETE)
             ->remove(Crud::PAGE_EDIT, Action::SAVE_AND_RETURN)
-            ->add(Crud::PAGE_EDIT, $tokenRoute('test_ai')->setLabel('KI-Verbindung testen')->setIcon('fa fa-plug-circle-check'))
-            ->add(Crud::PAGE_EDIT, $tokenRoute('remove_key')->setLabel('Gemini-Key entfernen')->setIcon('fa fa-key')->asDangerAction()
-                ->displayIf(static fn (Settings $s): bool => null !== $s->getGeminiApiKey()))
+            ->add(Crud::PAGE_EDIT, $tokenRoute('test_ai')->setLabel('KI-Verbindung testen')->setIcon('fa fa-plug-circle-check')
+                ->setHtmlAttributes(['data-ai-progress' => 'KI-Verbindung wird getestet']))
+            ->add(Crud::PAGE_EDIT, $tokenRoute('remove_key')->setLabel('API-Key entfernen')->setIcon('fa fa-key')->asDangerAction()
+                ->displayIf(fn (Settings $s): bool => $this->credentials->hasStored()))
             ->add(Crud::PAGE_EDIT, $tokenRoute('reset_logo')->setLabel('Standardlogo verwenden')->setIcon('fa fa-image')
                 ->displayIf(static fn (Settings $s): bool => null !== $s->getLogoPath()))
             ->add(Crud::PAGE_EDIT, $tokenRoute('reset_prompts')->setLabel('Prompts auf Standard')->setIcon('fa fa-rotate-left')
@@ -118,13 +120,19 @@ class SettingsCrudController extends AbstractCrudController
             ->onlyWhenUpdating();
 
         yield FormField::addTab('KI', 'fa fa-wand-magic-sparkles');
-        yield FormField::addFieldset('Gemini-Zugang')->setHelp($this->keyStatus());
-        yield TextField::new('newGeminiApiKey', 'Neuer Gemini-API-Key')
+        yield FormField::addFieldset('KI-Anbieter')->setHelp($this->keyStatus());
+        yield ChoiceField::new('aiProvider', 'Anbieter')
+            ->setChoices(AiProvider::CHOICES)
+            ->allowMultipleChoices(false)
+            ->setFormTypeOption('placeholder', 'Standard aus .env (AI_PROVIDER)')
+            ->setColumns(3)->hideOnIndex()
+            ->setHelp('Gilt für Erkennung, Duplikat-Vergleich und Übersetzung. Beim Wechsel werden eingetragene Modellnamen auf den Standard des neuen Anbieters zurückgesetzt.');
+        yield TextField::new('newApiKey', 'Neuer API-Key')
             ->setFormType(PasswordType::class)
             ->setFormTypeOption('always_empty', true)
             ->setFormTypeOption('attr', ['autocomplete' => 'new-password'])
-            ->setColumns(6)->onlyOnForms()
-            ->setHelp('Nur ausfüllen, um den Key zu setzen oder zu ändern. Er wird verschlüsselt gespeichert und nie wieder angezeigt. Key anlegen: https://aistudio.google.com/apikey – für den Datenschutz einen bezahlten Tarif (Abrechnungskonto) verwenden.');
+            ->setColumns(5)->onlyOnForms()
+            ->setHelp('Nur ausfüllen, um den Key zu setzen oder zu ändern. Er wird für den gewählten Anbieter verschlüsselt gespeichert und nie wieder angezeigt. Gemini: https://aistudio.google.com/apikey, Claude: https://console.anthropic.com/settings/keys – für den Datenschutz jeweils einen bezahlten Tarif verwenden.');
         yield TextField::new('aiModel', 'Modell für die Erkennung')->setColumns(3)->hideOnIndex()
             ->setFormTypeOption('attr', ['placeholder' => $this->aiConfig->defaultModel()])
             ->setHelp('Leer = '.$this->aiConfig->defaultModel());
@@ -153,7 +161,7 @@ class SettingsCrudController extends AbstractCrudController
             ->setHelp('So sieht der Prompt mit den aktuellen Daten aus (Stand beim Öffnen der Seite).');
 
         yield FormField::addFieldset('Duplikate')
-            ->setHelp('Lädst du ein Objekt hoch, das schon in der Sammlung ist, ordnet die Website den Upload dem vorhandenen Objekt zu und zählt ihn. Ablauf: Vorauswahl ähnlicher Objekte (Objektart, Land, Jahr, Katalognummer, Nennwert, Serie, Wahrnehmungs-Hash der Fotos), dann vergleicht Gemini die Fotos mit höchstens drei Kandidaten in einem Aufruf. „Besser“ heißt: zuerst bessere Erhaltung, bei gleicher Erhaltung bessere Fotos.');
+            ->setHelp('Lädst du ein Objekt hoch, das schon in der Sammlung ist, ordnet die Website den Upload dem vorhandenen Objekt zu und zählt ihn. Ablauf: Vorauswahl ähnlicher Objekte (Objektart, Land, Jahr, Katalognummer, Nennwert, Serie, Wahrnehmungs-Hash der Fotos), dann vergleicht die KI die Fotos mit höchstens drei Kandidaten in einem Aufruf. „Besser“ heißt: zuerst bessere Erhaltung, bei gleicher Erhaltung bessere Fotos.');
         yield BooleanField::new('duplicateCheck', 'Duplikate beim Import erkennen')->renderAsSwitch()->setColumns(6)->hideOnIndex()
             ->setHelp('Läuft nach der KI-Erkennung jedes neuen Upload-Ordners. Vorhandene Objekte prüft app:duplicates:scan.');
         yield BooleanField::new('duplicateAutoReplacePublished', 'Veröffentlichte Objekte automatisch aktualisieren')->renderAsSwitch()->setColumns(6)->hideOnIndex()
@@ -189,10 +197,24 @@ class SettingsCrudController extends AbstractCrudController
 
     public function updateEntity(EntityManagerInterface $entityManager, $entityInstance): void
     {
-        $key = $entityInstance->takeNewGeminiApiKey();
+        // Anbieter gewechselt: Modellnamen gelten nur für den bisherigen Anbieter. Hier und nicht im Setter, weil das
+        // Formular die Modellfelder nach dem Anbieter zurückschreibt. Ein gleichzeitig geändertes Modell bleibt.
+        $original = $entityManager->getUnitOfWork()->getOriginalEntityData($entityInstance);
+        $oldProvider = $this->aiProvider->resolve(\is_string($original['aiProvider'] ?? null) ? $original['aiProvider'] : null);
+        if ($oldProvider !== $this->aiProvider->name()) {
+            if ($entityInstance->getAiModel() === ($original['aiModel'] ?? null)) {
+                $entityInstance->setAiModel(null);
+            }
+            if ($entityInstance->getAiTranslationModel() === ($original['aiTranslationModel'] ?? null)) {
+                $entityInstance->setAiTranslationModel(null);
+            }
+        }
+
+        $key = $entityInstance->takeNewApiKey();
         if (null !== $key) {
-            $this->credentials->store($key);
-            $this->addFlash('success', 'Der Gemini-API-Key wurde verschlüsselt gespeichert.');
+            $provider = $this->aiProvider->name();
+            $this->credentials->store($key, $provider);
+            $this->addFlash('success', sprintf('Der %s-API-Key wurde verschlüsselt gespeichert.', AiProvider::label($provider)));
         }
 
         $oldLogo = $entityInstance->getLogoPath();
@@ -215,7 +237,7 @@ class SettingsCrudController extends AbstractCrudController
     }
 
     #[AdminRoute('/test-ai', name: 'test_ai', options: ['methods' => ['POST']])]
-    public function testAi(Request $request, GeminiClient $client, SettingsProvider $settings): Response
+    public function testAi(Request $request, AiClients $clients, AiProgress $progress, SettingsProvider $settings): Response
     {
         $this->checkToken($request, 'test_ai');
         // Session freigeben: Sonst warten alle anderen Backend-Seiten auf die Antwort der KI (PHP sperrt die Session je Anfrage)
@@ -224,8 +246,9 @@ class SettingsCrudController extends AbstractCrudController
             $this->addFlash('warning', 'AI_PROVIDER=fake ist gesetzt – es wird keine echte KI verwendet.');
         } else {
             try {
-                $model = $client->ping($this->aiConfig->recognitionModel());
-                $this->addFlash('success', sprintf('Verbindung zu Gemini funktioniert (Modell %s).', $model));
+                $progress->step(sprintf('Testanfrage an %s (Modell %s) – warte auf Antwort …', $progress->aiName(), $this->aiConfig->recognitionModel()));
+                $model = $clients->active()->ping($this->aiConfig->recognitionModel());
+                $this->addFlash('success', sprintf('Verbindung zu %s funktioniert (Modell %s).', AiProvider::label($this->aiProvider->name()), $model));
             } catch (\Throwable $e) {
                 $this->addFlash('danger', 'Test fehlgeschlagen: '.$e->getMessage());
             }
@@ -240,7 +263,7 @@ class SettingsCrudController extends AbstractCrudController
         $this->checkToken($request, 'remove_key');
         $this->credentials->store(null);
         $em->flush();
-        $this->addFlash('success', 'Der gespeicherte Gemini-API-Key wurde entfernt.');
+        $this->addFlash('success', sprintf('Der gespeicherte %s-API-Key wurde entfernt.', AiProvider::label($this->aiProvider->name())));
 
         return $this->redirectToSettings($settings);
     }
@@ -273,12 +296,15 @@ class SettingsCrudController extends AbstractCrudController
 
     private function keyStatus(): string
     {
+        $provider = $this->aiProvider->name();
+        $label = AiProvider::label($provider);
+
         return match (true) {
             $this->aiProvider->isFake() => 'Testmodus: AI_PROVIDER=fake – die KI wird nicht aufgerufen.',
-            GeminiCredentials::SOURCE_ENV === $this->credentials->source() => sprintf('Der Key kommt aus GEMINI_API_KEY in .env.local (%s) und hat Vorrang.', $this->credentials->hint()),
-            $this->credentials->isUnreadable() => 'Der gespeicherte Key lässt sich nicht mehr entschlüsseln (APP_SECRET wurde geändert). Bitte neu eingeben.',
-            null !== $this->credentials->source() => sprintf('Key hinterlegt, endet auf %s.', $this->credentials->hint()),
-            default => 'Noch kein Key hinterlegt – Erkennung und Übersetzung sind erst danach möglich.',
+            AiCredentials::SOURCE_ENV === $this->credentials->source() => sprintf('%s: Der Key kommt aus %s in .env.local (%s) und hat Vorrang.', $label, AiCredentials::envName($provider), $this->credentials->hint()),
+            $this->credentials->isUnreadable() => $label.': Der gespeicherte Key lässt sich nicht mehr entschlüsseln (APP_SECRET wurde geändert). Bitte neu eingeben.',
+            null !== $this->credentials->source() => sprintf('%s: Key hinterlegt, endet auf %s.', $label, $this->credentials->hint()),
+            default => $label.': Noch kein Key hinterlegt – Erkennung und Übersetzung sind erst danach möglich.',
         };
     }
 

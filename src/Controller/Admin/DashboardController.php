@@ -86,7 +86,12 @@ class DashboardController extends AbstractDashboardController
 
     public function configureAssets(): Assets
     {
-        return Assets::new()->addHtmlContentToHead($this->vite->tags('assets/admin.ts'));
+        // Adresse für den Zwischenstand laufender KI-Aufgaben (assets/admin/aiProgress.ts)
+        $progressUrl = htmlspecialchars($this->generateUrl('admin_ai_progress'));
+
+        return Assets::new()
+            ->addHtmlContentToHead($this->vite->tags('assets/admin.ts'))
+            ->addHtmlContentToHead('<meta name="ai-progress-url" content="'.$progressUrl.'">');
     }
 
     public function configureMenuItems(): iterable

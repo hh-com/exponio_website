@@ -128,7 +128,7 @@ Fehlen Webbilder, erzeugt `php bin/console app:media:rebuild` sie aus den Origin
 
 ```dotenv
 APP_ENV=prod
-APP_SECRET=<openssl rand -hex 32>         # nicht mehr ändern – sonst ist der gespeicherte Gemini-Key unlesbar
+APP_SECRET=<openssl rand -hex 32>         # nicht mehr ändern – sonst sind die gespeicherten API-Keys unlesbar
 DEFAULT_URI=https://deine-domain.de
 DATABASE_URL="mysql://…"
 MAILER_DSN=smtp://user:pass@smtp.example.de:587
@@ -242,15 +242,35 @@ sowie eine Übersicht auf dem Dashboard.
 
 ---
 
-## 7. KI (Google Gemini)
+## 7. KI (Google Gemini oder Anthropic Claude)
 
-- **Key:** Backend → *Einstellungen* → Tab **KI** → „Neuer Gemini-API-Key“. Der Key wird mit libsodium verschlüsselt
-  gespeichert (Schlüssel aus `APP_SECRET`) und nie wieder angezeigt. Steht `GEMINI_API_KEY` in `.env.local`, hat
-  dieser Vorrang. „KI-Verbindung testen“ prüft Key und Modell.
-- **Schnittstelle:** Gemini Interactions API (seit Juni 2026 Googles Standard), Antwort als JSON nach festem
+- **Anbieter:** Backend → *Einstellungen* → Tab **KI** → „Anbieter“. Er gilt für alle Aufgaben (Erkennung,
+  Duplikat-Vergleich, Übersetzung). Ohne Auswahl gilt `AI_PROVIDER` aus `.env`. Beim Wechsel werden die
+  Modellnamen zurückgesetzt, weil sie nur für den bisherigen Anbieter gelten.
+- **Key:** Im selben Tab → „Neuer API-Key“; er wird für den gewählten Anbieter gespeichert (je Anbieter ein eigener
+  Key). Der Key wird mit libsodium verschlüsselt gespeichert (Schlüssel aus `APP_SECRET`) und nie wieder angezeigt.
+  Steht `GEMINI_API_KEY` bzw. `ANTHROPIC_API_KEY` in `.env.local`, hat dieser Vorrang. „KI-Verbindung testen“
+  prüft Key und Modell des aktiven Anbieters.
+- **Schnittstelle Gemini:** Gemini Interactions API (seit Juni 2026 Googles Standard), Antwort als JSON nach festem
   Schema, Bilder als Base64, `store: false`.
-- **Modelle:** Standard `gemini-3.8-flash` (Erkennung) und `gemini-3.5-flash-lite` (Übersetzung), änderbar im
-  Backend. Aktuelle Liste: <https://ai.google.dev/gemini-api/docs/models>.
+- **Schnittstelle Claude:** Messages API, Bilder als Base64. Das JSON-Schema wird als Werkzeug übergeben, das Claude
+  aufrufen muss (`tool_choice`); dessen Eingaben sind das Ergebnis.
+- **Überlastung:** Bei 429/5xx (Claude auch 529) wiederholt die Website eine Anfrage bis zu dreimal (nach 2, 4 und
+  8 s, oder so lange, wie der Anbieter per `Retry-After` verlangt), siehe `App\Ai\AiRetryStrategy`.
+- **Wartestatus im Backend:** Löst du im Backend eine KI-Aufgabe aus („KI-Erkennung“, „Jetzt übersetzen“,
+  „KI-Verbindung testen“, Erkennung in *Prüfen & freigeben*), erscheint unten rechts ein Hinweis mit Drehsymbol,
+  verstrichener Zeit und dem aktuellen Schritt (z. B. „3 Fotos an Claude gesendet – warte auf Antwort …“,
+  „Claude ist überlastet (Fehler 529) – Versuch 2 folgt gleich …“, „Duplikatprüfung …“, „Anfrage 2 von max. 5“).
+  Technik: Der Browser schickt eine zufällige ID mit (`X-Progress-Id` bzw. Feld `_progress`), die Dienste melden
+  ihre Schritte an `App\Ai\AiProgress` (Cache-Pool `ai_progress.cache`), der Hinweis fragt `/admin/ai-progress`
+  jede Sekunde ab. Neue Aktionen bekommen den Hinweis mit `->setHtmlAttributes(['data-ai-progress' => 'Titel'])`.
+- **Hinweise (Toasts):** `assets/lib/toast.ts` blendet Meldungen unten rechts ein und aus – Info, Erfolg, Warnung,
+  Fehler und „läuft“. Auch alle `addFlash()`-Meldungen des Backends erscheinen so
+  (`templates/bundles/EasyAdminBundle/flash_messages.html.twig`). Fehler bleiben bis zum Schließen stehen.
+- **Modelle:** Gemini: Standard `gemini-3.8-flash` (Erkennung) und `gemini-3.5-flash-lite` (Übersetzung). Claude:
+  Standard `claude-sonnet-5-5` (Erkennung) und `claude-haiku-5-5` (Übersetzung). Alle änderbar im Backend bzw. in
+  `.env` (`GEMINI_MODEL`, `GEMINI_TRANSLATION_MODEL`, `ANTHROPIC_MODEL`, `ANTHROPIC_TRANSLATION_MODEL`).
+  Aktuelle Listen: <https://ai.google.dev/gemini-api/docs/models>, <https://docs.claude.com/en/docs/about-claude/models>.
 - **Prompts:** Alle drei Prompts sind im Backend editierbar: Erkennung, Übersetzung und Duplikat-Vergleich.
   Platzhalter `{{objektarten}}`, `{{laender}}`, `{{themen}}` und `{{sprache}}` füllt die Website. Das Antwortformat
   (JSON-Schema) bleibt im Code. Vorschauen zeigen den fertigen Erkennungs-Prompt und den Vergleichsauftrag für das
@@ -347,9 +367,9 @@ es entstehen keine API-Kosten. Für die Browser-Tests einmalig `npx playwright i
 ```
 assets/                            Frontend (Vue-Islands, Tailwind) und Backend-Prüf-App
 src/
-  Ai/                              GeminiClient, GeminiCredentials, SecretBox, AiConfig, DefaultPrompts
-  Recognition/                     PromptBuilder, GeminiRecognizer, FakeRecognizer, RecognitionApplier
-  Duplicate/                       CandidateFinder, ComparisonPromptBuilder, GeminiComparer, FakeComparer, DuplicateDetector, DuplicateMerger
+  Ai/                              AiProvider, AiClients, GeminiClient, AnthropicClient, AiCredentials, SecretBox, AiConfig, DefaultPrompts
+  Recognition/                     PromptBuilder, AiRecognizer, FakeRecognizer, RecognitionApplier
+  Duplicate/                       CandidateFinder, ComparisonPromptBuilder, AiComparer, FakeComparer, DuplicateDetector, DuplicateMerger
   Translation/                     TranslationRunner, MachineTranslator, PlaceholderGuard, TranslatableTrait
   Localization/                    Locales, UiMessages, DatabaseTranslator
   Routing/FrontRouteLoader.php     /de/… mit deutschen Pfaden, /{sprache}/… für alle anderen
@@ -375,7 +395,7 @@ migrations/  tests/                Datenbank-Migrationen, PHPUnit- und Playwrigh
 ## 15. Vor dem Livegang
 
 - [ ] **Impressum**, **Datenschutz**, **Barrierefreiheit** unter *Backend → Seiten* vervollständigen
-- [ ] *Einstellungen*: Name der Website, Logo (optional), Name des Sammlers, Kontakt-E-Mail, Gemini-Key, „KI-Verbindung testen“
+- [ ] *Einstellungen*: Name der Website, Logo (optional), Name des Sammlers, Kontakt-E-Mail, KI-Anbieter und API-Key, „KI-Verbindung testen“
 - [ ] `MAILER_DSN` / `MAILER_FROM` setzen und eine Testnachricht schicken
 - [ ] Gewünschte Sprachen unter *Backend → Sprachen* freischalten
 - [ ] HTTPS, Cronjobs, Backup für Datenbank **und** Medienordner (die Originale liegen in `app_uploads/`)

@@ -85,11 +85,15 @@ class Settings implements TranslatableInterface
     #[Assert\Range(min: 6, max: 96)]
     private int $itemsPerPage = 24;
 
-    /** Gemini-Modell für die Erkennung; leer = GEMINI_MODEL aus .env */
+    /** KI-Anbieter (App\Ai\AiProvider); leer = AI_PROVIDER aus .env */
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $aiProvider = null;
+
+    /** Modell für die Erkennung (des aktiven Anbieters); leer = Standardmodell aus .env */
     #[ORM\Column(length: 80, nullable: true)]
     private ?string $aiModel = null;
 
-    /** Gemini-Modell für Übersetzungen; leer = GEMINI_TRANSLATION_MODEL aus .env */
+    /** Modell für Übersetzungen (des aktiven Anbieters); leer = Standardmodell aus .env */
     #[ORM\Column(length: 80, nullable: true)]
     private ?string $aiTranslationModel = null;
 
@@ -127,6 +131,10 @@ class Settings implements TranslatableInterface
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $geminiApiKey = null;
 
+    /** Anthropic-API-Key, verschlüsselt (App\Ai\SecretBox) */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $anthropicApiKey = null;
+
     /** Dürfen KI-Crawler (GPTBot, ClaudeBot, …) die Seite lesen? */
     #[ORM\Column]
     private bool $allowAiCrawlers = true;
@@ -137,7 +145,7 @@ class Settings implements TranslatableInterface
     private int $messageRetentionMonths = 6;
 
     /** Nur für das Backend-Formular: neu eingegebener Key (wird nie gespeichert, sondern verschlüsselt übernommen) */
-    private ?string $newGeminiApiKey = null;
+    private ?string $newApiKey = null;
 
     public function __construct()
     {
@@ -451,37 +459,56 @@ class Settings implements TranslatableInterface
         }
     }
 
-    /** Verschlüsselter Key – zum Entschlüsseln App\Ai\GeminiCredentials verwenden */
-    public function getGeminiApiKey(): ?string
+    public function getAiProvider(): ?string
     {
-        return $this->geminiApiKey;
+        return $this->aiProvider;
     }
 
-    public function setGeminiApiKey(?string $encrypted): static
+    /** Beim Wechsel im Backend setzt SettingsCrudController::updateEntity() die Modellnamen zurück. */
+    public function setAiProvider(?string $aiProvider): static
     {
-        $this->geminiApiKey = $encrypted;
+        $this->aiProvider = null === $aiProvider || '' === trim($aiProvider) ? null : trim($aiProvider);
 
         return $this;
     }
 
-    /** Formularfeld „Neuer Gemini-API-Key“ – bleibt immer leer */
-    public function getNewGeminiApiKey(): ?string
+    /** Verschlüsselter Key des Anbieters – zum Entschlüsseln App\Ai\AiCredentials verwenden */
+    public function getApiKey(string $provider): ?string
+    {
+        return match ($provider) {
+            'anthropic' => $this->anthropicApiKey,
+            default => $this->geminiApiKey,
+        };
+    }
+
+    public function setApiKey(string $provider, ?string $encrypted): static
+    {
+        match ($provider) {
+            'anthropic' => $this->anthropicApiKey = $encrypted,
+            default => $this->geminiApiKey = $encrypted,
+        };
+
+        return $this;
+    }
+
+    /** Formularfeld „Neuer API-Key“ – bleibt immer leer */
+    public function getNewApiKey(): ?string
     {
         return null;
     }
 
-    public function setNewGeminiApiKey(?string $key): static
+    public function setNewApiKey(?string $key): static
     {
-        $this->newGeminiApiKey = null === $key || '' === trim($key) ? null : trim($key);
+        $this->newApiKey = null === $key || '' === trim($key) ? null : trim($key);
 
         return $this;
     }
 
     /** Liefert einen im Formular eingegebenen Key genau einmal. */
-    public function takeNewGeminiApiKey(): ?string
+    public function takeNewApiKey(): ?string
     {
-        $key = $this->newGeminiApiKey;
-        $this->newGeminiApiKey = null;
+        $key = $this->newApiKey;
+        $this->newApiKey = null;
 
         return $key;
     }

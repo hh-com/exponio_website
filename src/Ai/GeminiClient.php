@@ -13,37 +13,17 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  *
  * Wiederholungen bei 429/5xx übernimmt der HTTP-Client (config/packages/framework.yaml, "gemini.client").
  */
-final class GeminiClient
+final class GeminiClient implements AiClientInterface
 {
     public function __construct(
         private readonly HttpClientInterface $geminiClient,
-        private readonly GeminiCredentials $credentials,
+        private readonly AiCredentials $credentials,
     ) {
     }
 
-    /** @return array{type: 'text', text: string} */
-    public static function text(string $text): array
-    {
-        return ['type' => 'text', 'text' => $text];
-    }
-
-    /** @return array{type: 'image', data: string, mime_type: string} */
-    public static function image(string $base64, string $mimeType): array
-    {
-        return ['type' => 'image', 'data' => $base64, 'mime_type' => $mimeType];
-    }
-
-    /**
-     * Schickt Text- und Bildteile und liefert die Antwort als Array (gemäß JSON-Schema).
-     *
-     * @param list<array<string, string>> $input
-     * @param array<string, mixed>        $schema
-     *
-     * @return array{data: array<string, mixed>, model: string}
-     */
     public function generateJson(string $model, array $input, array $schema): array
     {
-        $apiKey = $this->credentials->apiKey();
+        $apiKey = $this->credentials->apiKey(AiProvider::GEMINI);
         if (null === $apiKey || '' === $apiKey) {
             throw new AiException('Kein Gemini-API-Key hinterlegt (Backend → Einstellungen → KI).');
         }
@@ -92,10 +72,9 @@ final class GeminiClient
         return ['data' => $data, 'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model];
     }
 
-    /** Kleine Testanfrage: prüft Key, Modell und strukturierte Ausgabe. */
     public function ping(string $model): string
     {
-        $result = $this->generateJson($model, [self::text('Antworte mit {"ok": true}.')], [
+        $result = $this->generateJson($model, [AiInput::text('Antworte mit {"ok": true}.')], [
             'type' => 'object',
             'properties' => ['ok' => ['type' => 'boolean']],
             'required' => ['ok'],

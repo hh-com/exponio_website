@@ -2,6 +2,7 @@
 
 namespace App\Translation;
 
+use App\Ai\AiProgress;
 use App\Entity\AbstractTranslation;
 use App\Entity\Language;
 use App\Entity\UiTranslation;
@@ -30,6 +31,7 @@ final class TranslationRunner
         private readonly TranslatableSources $sources,
         private readonly EntityManagerInterface $em,
         private readonly LoggerInterface $logger,
+        private readonly AiProgress $progress,
     ) {
     }
 
@@ -63,6 +65,7 @@ final class TranslationRunner
                 break;
             }
             ++$stats->requests;
+            $this->reportRequest($language, $stats, $maxRequests, 'Oberfläche', \count($batch));
             foreach ($this->translator->translate($batch, $language) as $key => $text) {
                 $hash = UiTranslation::hash($pending[$key]);
                 $row = $existing[$key] ?? null;
@@ -145,6 +148,7 @@ final class TranslationRunner
                 $texts[$n.'.'.$field] = $text;
             }
         }
+        $this->reportRequest($language, $stats, $maxRequests, 'Inhalte', \count($batch));
         $result = $this->translator->translate($texts, $language);
         foreach ($batch as $n => $job) {
             $values = [];
@@ -159,6 +163,12 @@ final class TranslationRunner
             }
         }
         $this->em->flush();
+    }
+
+    /** Zwischenstand fürs Backend, z. B. „Englisch: Anfrage 2 von max. 5 (Inhalte, 12 Einträge) – warte auf Claude …“ */
+    private function reportRequest(Language $language, TranslationStats $stats, int $maxRequests, string $part, int $entries): void
+    {
+        $this->progress->step(sprintf('%s: Anfrage %d von max. %d (%s, %d %s) – warte auf %s …', $language->getNameDe(), $stats->requests, $maxRequests, $part, $entries, 1 === $entries ? 'Eintrag' : 'Einträge', $this->progress->aiName()));
     }
 
     /**

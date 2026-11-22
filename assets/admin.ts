@@ -1,5 +1,7 @@
 import './styles/admin.css'
 import { createApp } from 'vue'
+import { initAiProgressForms } from './admin/aiProgress'
+import { showFlashToasts } from './lib/toast'
 
 /**
  * Objekt-Formular: Merkmalsgruppen passend zur gewählten Objektart ein-/ausblenden.
@@ -39,12 +41,15 @@ async function initReviewApp(): Promise<void> {
   createApp(ReviewApp, JSON.parse(el.dataset.props || '{}')).mount(el)
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    initAttributeGroups()
-    initReviewApp()
-  })
-} else {
+function init(): void {
+  showFlashToasts()
+  initAiProgressForms()
   initAttributeGroups()
   initReviewApp()
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init)
+} else {
+  init()
 }

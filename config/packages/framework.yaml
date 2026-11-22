@@ -8,7 +8,8 @@ framework:
         cookie_secure: auto
         cookie_samesite: lax
 
-    # Gemini Interactions API; der API-Key wird je Anfrage gesetzt (App\Ai\GeminiClient)
+    # KI-Anbieter; der API-Key wird je Anfrage gesetzt (App\Ai\GeminiClient, App\Ai\AnthropicClient).
+    # Wiederholungen (Statuscodes, Wartezeit 2 s, 4 s, 8 s) und ihre Anzeige im Backend: App\Ai\AiRetryStrategy
     http_client:
         scoped_clients:
             gemini.client:
@@ -16,9 +17,17 @@ framework:
                 timeout: 300
                 max_duration: 600
                 retry_failed:
+                    retry_strategy: App\Ai\AiRetryStrategy
                     max_retries: 3
-                    delay: 2000
-                    multiplier: 2
+            anthropic.client:
+                base_uri: 'https://api.anthropic.com/v1/'
+                headers:
+                    anthropic-version: '2023-06-01'
+                timeout: 300
+                max_duration: 600
+                retry_failed:
+                    retry_strategy: App\Ai\AiRetryStrategy
+                    max_retries: 3
 
     rate_limiter:
         inquiry:
