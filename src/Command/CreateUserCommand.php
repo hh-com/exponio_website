@@ -44,15 +44,15 @@ final class CreateUserCommand extends Command
 
         $password = (string) $input->getOption('password');
         if ('' === $password) {
-            $password = (string) $io->askHidden('Passwort (mind. 10 Zeichen)');
+            $password = (string) $io->askHidden('Passwort (mind. 8 Zeichen)');
             if ($password !== (string) $io->askHidden('Passwort wiederholen')) {
                 $io->error('Die Passwörter stimmen nicht überein.');
 
                 return Command::FAILURE;
             }
         }
-        if (mb_strlen($password) < 10) {
-            $io->error('Das Passwort muss mindestens 10 Zeichen lang sein.');
+        if (mb_strlen($password) < 8) {
+            $io->error('Das Passwort muss mindestens 8 Zeichen lang sein.');
 
             return Command::INVALID;
         }
