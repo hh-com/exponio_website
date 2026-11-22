@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import CropEditor from './CropEditor.vue'
 import SearchSelect from './SearchSelect.vue'
 import TopicPicker from './TopicPicker.vue'
-import { ApiError, createApi, type ItemData, type MergedInfo, type Meta, type QueueItem } from './api'
+import { AI_HINT_MAX, ApiError, createApi, type CropRect, type ItemData, type MergedInfo, type Meta, type QueueItem } from './api'
 import { AiProgressToast } from './aiProgress'
 import { toast } from '../lib/toast'
 
@@ -15,7 +16,7 @@ const filter = ref<'all' | 'pending' | 'review' | 'duplicate' | 'error'>('all')
 const currentId = ref<number | null>(null)
 const original = ref<ItemData | null>(null)
 const form = ref<ItemData | null>(null)
-const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate' | 'rotate'>('load')
+const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate' | 'rotate' | 'crop' | 'delete'>('load')
 const batch = ref({ done: 0, total: 0 })
 const errors = ref<Record<string, string>>({})
 const activeImage = ref(0)
@@ -42,6 +43,8 @@ const pending = computed(() => queue.value.filter((q) => !q.recognized && !q.err
 const position = computed(() => filtered.value.findIndex((q) => q.id === currentId.value))
 const area = computed(() => meta.value.areas.find((a) => a.id === form.value?.areaId) ?? null)
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== JSON.stringify(original.value))
+/** Ungespeicherte Änderungen außer dem Hinweis an die KI – der geht mit der Erkennung mit und bleibt erhalten */
+const dirtyBesidesHint = computed(() => !!form.value && !!original.value && JSON.stringify({ ...form.value, aiHint: null }) !== JSON.stringify({ ...original.value, aiHint: null }))
 const confidence = computed(() => form.value?.ai.confidence ?? null)
 
 /** Meldung als Toast (assets/lib/toast.ts) */
@@ -170,18 +173,40 @@ async function save(action: 'save' | 'publish' | 'archive' = 'save') {
   }
 }
 
+/** Objekt endgültig löschen – mit allen Fotos und seinen Upload-Ordnern im Upload-Verzeichnis */
+async function remove() {
+  if (!form.value) return
+  const { id, title, folders } = form.value
+  const where = folders.length === 1
+    ? `\n\nAuch der Upload-Ordner ${folders[0]} wird gelöscht.`
+    : folders.length > 1 ? `\n\nAuch die Upload-Ordner ${folders.join(', ')} werden gelöscht.` : ''
+  if (!confirm(`Objekt #${id} „${title ?? ''}“ mit allen Fotos endgültig löschen?${where}\n\nDas lässt sich nicht rückgängig machen.`)) return
+  busy.value = 'delete'
+  try {
+    const data = await api.remove(id)
+    const failed = Object.entries(data.failed)
+    if (failed.length) flash('danger', `Objekt #${id} gelöscht, aber nicht jeder Upload-Ordner: ${failed.map(([f, m]) => `${f}: ${m}`).join('; ')}`)
+    else flash('success', `Objekt #${id} gelöscht${data.folders.length ? `, Upload-Ordner ${data.folders.join(', ')} entfernt` : ''}.`)
+    await dropFromQueue(id)
+  } catch (e) {
+    flash('danger', (e as Error).message)
+  } finally {
+    busy.value = ''
+  }
+}
+
 /**
  * Erkennt ein Objekt. Mit progress zeigt der Toast den Zwischenstand vom Server; ohne quiet wird er
  * am Ende zur Ergebnis-Meldung (im Stapel meldet recognizeAll() das Gesamtergebnis).
  */
-async function recognize(id: number, quiet = false, progress?: AiProgressToast): Promise<'ok' | 'merged' | 'failed'> {
+async function recognize(id: number, quiet = false, progress?: AiProgressToast, aiHint?: string | null): Promise<'ok' | 'merged' | 'failed'> {
   const report = (type: 'success' | 'danger' | 'info', text: string) => {
     if (quiet) return
     if (progress) progress.finish(type === 'danger' ? 'error' : type, text)
     else flash(type, text)
   }
   try {
-    const data = await api.recognize(id, progress?.id)
+    const data = await api.recognize(id, progress?.id, aiHint)
     meta.value = data.meta
     if (data.merged) {
       await dropFromQueue(id)
@@ -210,9 +235,9 @@ async function recognize(id: number, quiet = false, progress?: AiProgressToast):
 
 async function recognizeCurrent() {
   if (!form.value) return
-  if (dirty.value && !confirm('Die KI überschreibt die Felder. Ungespeicherte Änderungen gehen verloren. Fortfahren?')) return
+  if (dirtyBesidesHint.value && !confirm('Die KI überschreibt die Felder. Ungespeicherte Änderungen gehen verloren. Fortfahren?')) return
   busy.value = 'recognize'
-  await recognize(form.value.id, false, new AiProgressToast('KI-Erkennung läuft'))
+  await recognize(form.value.id, false, new AiProgressToast('KI-Erkennung läuft'), form.value.aiHint)
   busy.value = ''
 }
 
@@ -305,6 +330,22 @@ async function moveImage(index: number, step: number) {
   activeImage.value = target
 }
 
+/**
+ * Nach Drehen oder Zuschneiden die neuen Bilddateien übernehmen – nur Adressen und Größe,
+ * sonst gingen ungespeicherte Angaben zu Seite und Alt-Text verloren.
+ */
+function refreshImage(itemId: number, imageId: number, item: ItemData) {
+  const fresh = item.images.find((i) => i.id === imageId)
+  if (fresh && form.value?.id === itemId) {
+    for (const list of [form.value.images, original.value?.images ?? []]) {
+      const target = list.find((i) => i.id === imageId)
+      if (target) Object.assign(target, { thumb: fresh.thumb, medium: fresh.medium, full: fresh.full, width: fresh.width, height: fresh.height, cropped: fresh.cropped })
+    }
+  }
+  const entry = queue.value.find((q) => q.id === itemId)
+  if (entry) entry.thumb = item.images[0]?.thumb ?? null
+}
+
 /** Bild drehen (sofort gespeichert). Ungespeicherte Angaben zu Seite und Alt-Text bleiben erhalten. */
 async function rotateImage(index: number, degrees: number) {
   const image = form.value?.images[index]
@@ -313,16 +354,58 @@ async function rotateImage(index: number, degrees: number) {
   busy.value = 'rotate'
   try {
     const data = await api.rotateImage(itemId, image.id, degrees)
-    const fresh = data.item.images.find((i) => i.id === image.id)
-    if (fresh && form.value?.id === itemId) {
-      // nur die Adressen übernehmen, sonst gingen ungespeicherte Eingaben verloren
-      for (const list of [form.value.images, original.value?.images ?? []]) {
-        const target = list.find((i) => i.id === image.id)
-        if (target) Object.assign(target, { thumb: fresh.thumb, medium: fresh.medium, full: fresh.full })
-      }
-    }
-    const entry = queue.value.find((q) => q.id === itemId)
-    if (entry) entry.thumb = data.item.images[0]?.thumb ?? null
+    refreshImage(itemId, image.id, data.item)
+  } catch (e) {
+    flash('danger', (e as Error).message)
+  } finally {
+    busy.value = ''
+  }
+}
+
+// ---- Zuschneiden (CropEditor.vue) über dem großen Bild; gespeichert wird sofort, wie beim Drehen ----
+const cropping = ref<{ imageId: number } | null>(null)
+
+function startCrop() {
+  const image = form.value?.images[activeImage.value]
+  if (!image || busy.value) return
+  cropping.value = { imageId: image.id }
+}
+function cancelCrop() {
+  cropping.value = null
+}
+watch([activeImage, () => form.value?.id], cancelCrop)
+
+/** Zuschnitt speichern (sofort, wie das Drehen) */
+async function applyCrop(rect: CropRect) {
+  const state = cropping.value
+  if (!form.value || !state || busy.value) return
+  const itemId = form.value.id
+  const recognized = !!form.value.ai.recognizedAt
+  busy.value = 'crop'
+  try {
+    const data = await api.cropImage(itemId, state.imageId, rect)
+    refreshImage(itemId, state.imageId, data.item)
+    cancelCrop()
+    flash('success', recognized
+      ? 'Bild zugeschnitten. Starte die KI-Erkennung neu, damit Titel und Beschreibung nur noch den Ausschnitt berücksichtigen.'
+      : 'Bild zugeschnitten.')
+  } catch (e) {
+    flash('danger', (e as Error).message)
+  } finally {
+    busy.value = ''
+  }
+}
+
+/** Zuschnitt aufheben: wieder das ganze Foto aus dem Original */
+async function resetCrop(index: number) {
+  const image = form.value?.images[index]
+  if (!form.value || !image || busy.value) return
+  const itemId = form.value.id
+  busy.value = 'crop'
+  try {
+    const data = await api.cropImage(itemId, image.id, null)
+    refreshImage(itemId, image.id, data.item)
+    flash('success', 'Zuschnitt aufgehoben.')
   } catch (e) {
     flash('danger', (e as Error).message)
   } finally {
@@ -359,6 +442,7 @@ function onKeydown(event: KeyboardEvent) {
   // wie die Knöpfe: nicht speichern, solange eine andere Aktion läuft (z. B. „Alle erkennen“)
   if (mod && event.key === 'Enter') { event.preventDefault(); if (!busy.value) save('publish') }
   else if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); if (!busy.value) save('save') }
+  else if (event.key === 'Escape' && cropping.value) cancelCrop()
   else if (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && currentId.value !== null) {
     event.preventDefault()
     step(event.key === 'ArrowDown' ? 1 : -1)
@@ -561,16 +645,29 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
         <div class="tw:grid tw:gap-5 tw:xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <!-- Bilder + KI -->
           <div class="tw:space-y-4">
-            <div class="tw:relative tw:overflow-hidden tw:rounded-2xl tw:border tw:border-line tw:bg-soft">
+            <!-- Zuschneiden: Rahmen an Ecken und Kanten ziehen oder verschieben; der Rest wird abgeschnitten -->
+            <CropEditor
+              v-if="cropping && form.images[activeImage]?.id === cropping.imageId"
+              :key="cropping.imageId"
+              :src="form.images[activeImage].medium"
+              :width="form.images[activeImage].width"
+              :height="form.images[activeImage].height"
+              :busy="busy === 'crop'"
+              @apply="applyCrop"
+              @cancel="cancelCrop"
+            />
+            <div v-else class="tw:relative tw:overflow-hidden tw:rounded-2xl tw:border tw:border-line tw:bg-soft">
               <a v-if="form.images[activeImage]" :href="form.images[activeImage].full" target="_blank" class="tw:block tw:aspect-square">
-                <img :src="form.images[activeImage].medium" alt="" class="tw:size-full tw:object-contain tw:p-4 tw:transition-opacity" :class="busy === 'rotate' ? 'tw:opacity-40' : ''">
+                <img :src="form.images[activeImage].medium" alt="" class="tw:size-full tw:object-contain tw:p-4 tw:transition-opacity" :class="busy === 'rotate' || busy === 'crop' ? 'tw:opacity-40' : ''">
               </a>
               <div v-else class="tw:grid tw:aspect-square tw:place-items-center tw:opacity-50">Keine Bilder</div>
-              <!-- Drehen: liegt ein Foto quer oder auf dem Kopf -->
-              <div v-if="form.images[activeImage]" class="tw:absolute tw:right-2 tw:bottom-2 tw:flex tw:gap-1 tw:rounded-xl tw:bg-white/90 tw:p-1 tw:shadow-sm" role="group" :aria-label="`Bild ${activeImage + 1} drehen`">
+              <!-- Drehen und Zuschneiden: liegt ein Foto quer, oder ist neben der Marke Text zu sehen, den die KI mitliest -->
+              <div v-if="form.images[activeImage]" class="tw:absolute tw:right-2 tw:bottom-2 tw:flex tw:gap-1 tw:rounded-xl tw:bg-white/90 tw:p-1 tw:shadow-sm" role="group" :aria-label="`Bild ${activeImage + 1} drehen und zuschneiden`">
                 <button type="button" class="btn btn-default btn-ghost btn-sm" title="90° nach links drehen" aria-label="90° nach links drehen" :disabled="!!busy" @click="rotateImage(activeImage, -90)"><i class="fa fa-rotate-left" /></button>
                 <button type="button" class="btn btn-default btn-ghost btn-sm" title="Auf den Kopf stellen (180°)" aria-label="180° drehen" :disabled="!!busy" @click="rotateImage(activeImage, 180)">180°</button>
                 <button type="button" class="btn btn-default btn-ghost btn-sm" title="90° nach rechts drehen" aria-label="90° nach rechts drehen" :disabled="!!busy" @click="rotateImage(activeImage, 90)"><i class="fa fa-rotate-right" /></button>
+                <button type="button" class="btn btn-default btn-ghost btn-sm" title="Zuschneiden" aria-label="Zuschneiden" :disabled="!!busy" @click="startCrop"><i class="fa fa-crop-simple" /></button>
+                <button v-if="form.images[activeImage].cropped" type="button" class="btn btn-default btn-ghost btn-sm" title="Zuschnitt aufheben (ganzes Foto)" aria-label="Zuschnitt aufheben" :disabled="!!busy" @click="resetCrop(activeImage)"><i class="fa fa-expand" /></button>
               </div>
             </div>
             <div v-if="form.images.length" class="tw:flex tw:flex-wrap tw:gap-2">
@@ -624,6 +721,23 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
                 </ul>
               </template>
               <p v-if="!form.ai.recognizedAt && !form.ai.error" class="tw:mt-3 tw:mb-0 tw:opacity-60">Noch nicht erkannt.</p>
+              <!-- Hinweis an die KI: bekannte Angaben vorgeben, wenn die Erkennung danebenliegt -->
+              <div class="tw:mt-4 tw:border-t tw:border-line tw:pt-3">
+                <label for="ai-hint" class="form-label">Hinweis an die KI</label>
+                <textarea
+                  id="ai-hint"
+                  v-model="form.aiHint"
+                  class="form-control"
+                  rows="3"
+                  :maxlength="AI_HINT_MAX"
+                  placeholder="z. B. „DDR 1953, 24 Pf Karl Marx“ oder „Der Text unter der Marke gehört nicht dazu“"
+                  aria-describedby="ai-hint-help"
+                />
+                <p id="ai-hint-help" class="tw:mt-1 tw:mb-2 tw:text-[12px] tw:opacity-70">Hat Vorrang vor der Einschätzung der KI, den Rest ergänzt sie anhand der Fotos. Der Hinweis bleibt gespeichert und gilt bei jeder weiteren Erkennung.</p>
+                <button type="button" class="btn btn-default btn-outline btn-sm" :disabled="!!busy || !form.images.length" @click="recognizeCurrent">
+                  <i class="fa fa-wand-magic-sparkles" /> {{ busy === 'recognize' ? 'Erkenne …' : form.aiHint?.trim() ? 'Mit Hinweis erkennen' : (form.ai.recognizedAt ? 'Erneut erkennen' : 'Jetzt erkennen') }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -751,7 +865,10 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
             <!-- Aktionen -->
             <div class="tw:sticky tw:bottom-0 tw:z-20 tw:-mx-1 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:border-t tw:border-line tw:bg-paper/95 tw:px-1 tw:py-3 tw:backdrop-blur">
               <!-- mobil kompakt, damit alles in eine Zeile passt -->
-              <button type="button" class="btn btn-danger btn-ghost" title="Archivieren" :disabled="!!busy" @click="save('archive')">
+              <button type="button" class="btn btn-danger btn-ghost" title="Endgültig löschen, mit Fotos und Upload-Ordner" :disabled="!!busy" @click="remove">
+                <i class="fa fa-trash" /> <span class="tw:max-sm:sr-only">Löschen</span>
+              </button>
+              <button type="button" class="btn btn-default btn-ghost" title="Archivieren: nicht auf der Website, bleibt unter Objekte erhalten" :disabled="!!busy" @click="save('archive')">
                 <i class="fa fa-box-archive" /> <span class="tw:max-sm:sr-only">Archivieren</span>
               </button>
               <span class="tw:ml-auto tw:text-[12px] tw:opacity-60 tw:max-lg:hidden">Strg+S speichern · Strg+Enter freigeben · Alt+↑/↓ wechseln</span>

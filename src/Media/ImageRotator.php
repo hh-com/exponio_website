@@ -10,6 +10,7 @@ use App\Entity\ItemImage;
  *
  * - Liegt das Original noch im Upload-Ordner der App, entstehen die Webbilder daraus neu – ohne zusätzlichen
  *   Qualitätsverlust. Die Gesamtdrehung steht in ItemImage::$rotation, damit app:media:rebuild sie beibehält.
+ *   Ein Zuschnitt (ItemImage::$crop, siehe ImageCropper) bleibt dabei erhalten.
  * - Ohne Original (im Backend hochgeladen oder Original nicht mehr da) wird die große Webvariante selbst gedreht.
  *
  * Das gedrehte Bild bekommt neue Dateinamen (Browser-Cache), die alten Dateien werden gelöscht.
@@ -39,7 +40,7 @@ final class ImageRotator
         $original = null === $image->getSourceFile() ? null : $this->scanDir.'/'.$image->getSourceFile();
 
         if (null !== $original && is_file($original)) {
-            $saved = $this->media->store($original, $base, $rotation);
+            $saved = $this->media->store($original, $base, $rotation, $image->getCrop());
         } else {
             $current = $this->media->absolutePath($old);
             if (!is_file($current)) {

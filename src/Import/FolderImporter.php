@@ -14,11 +14,14 @@ use App\Repository\ScanJobRepository;
 use App\Service\SettingsProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Importiert neue Upload-Ordner der Exponio-App: ein Ordner = ein Objekt (Entwurf) mit einem Upload-Eintrag.
  * Der Upload-Ordner wird nur gelesen – die Originale bleiben unverändert und lassen sich jederzeit
- * erneut verarbeiten (app:media:rebuild, oder neuer Import bei leerer Datenbank).
+ * erneut verarbeiten (app:media:rebuild, oder neuer Import bei leerer Datenbank). Gelöscht wird ein Ordner
+ * nur zusammen mit seinem Objekt (App\Import\ItemRemover, „Löschen“ in Prüfen & freigeben).
  *
  * Das neue Objekt ist für die Duplikatprüfung vorgemerkt (DuplicateStatus::Pending): Nach der KI-Erkennung
  * prüft App\Duplicate\DuplicateDetector, ob es das Objekt schon gibt, und ordnet den Upload dann dem vorhandenen zu.
@@ -131,6 +134,33 @@ final class FolderImporter
         }
 
         return $item;
+    }
+
+    /**
+     * Löscht einen Upload-Ordner samt Inhalt.
+     *
+     * @return bool false, wenn es den Ordner nicht (mehr) gibt
+     *
+     * @throws \InvalidArgumentException bei einem Namen, der kein Upload-Ordner der App ist
+     * @throws \RuntimeException         wenn er sich nicht löschen lässt (z. B. fehlende Schreibrechte)
+     */
+    public function removeFolder(string $folder): bool
+    {
+        // das Muster lässt weder "/" noch ".." zu: gelöscht wird nur direkt im Upload-Verzeichnis
+        if (!preg_match(self::FOLDER_PATTERN, $folder)) {
+            throw new \InvalidArgumentException(sprintf('Ungültiger Ordnername "%s".', $folder));
+        }
+        $dir = $this->scanDir.'/'.$folder;
+        if (!is_dir($dir) && !is_link($dir)) {
+            return false;
+        }
+        try {
+            (new Filesystem())->remove($dir);
+        } catch (IOExceptionInterface $e) {
+            throw new \RuntimeException($e->getMessage(), 0, $e);
+        }
+
+        return true;
     }
 
     private function folderLabel(string $folder): string

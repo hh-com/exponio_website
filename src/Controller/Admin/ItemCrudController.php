@@ -10,6 +10,8 @@ use App\Enum\ItemStatus;
 use App\Form\Admin\ItemAttributesType;
 use App\Form\Admin\ItemImageType;
 use App\Form\Admin\TranslationType;
+use App\Media\CropBox;
+use App\Media\ImageCropper;
 use App\Media\ImageRotator;
 use App\Media\MediaStorage;
 use App\Recognition\RecognitionService;
@@ -65,6 +67,8 @@ class ItemCrudController extends AbstractCrudController
         'Archiviert' => ItemStatus::Archived,
     ];
     private const MAX_SEARCH_TERMS = 6;
+    /** Wert von ItemImage::$cropChange: Zuschnitt aufheben */
+    private const CROP_RESET = 'reset';
 
     private bool $listPreloaded = false;
 
@@ -74,6 +78,7 @@ class ItemCrudController extends AbstractCrudController
         private readonly LanguageRepository $languages,
         private readonly MediaStorage $media,
         private readonly ImageRotator $rotator,
+        private readonly ImageCropper $cropper,
         private readonly SettingsProvider $settings,
         private readonly AppExtension $app,
         private readonly Packages $packages,
@@ -212,7 +217,7 @@ class ItemCrudController extends AbstractCrudController
             ->allowDelete()
             ->setFormTypeOption('by_reference', false)
             ->onlyOnForms()
-            ->setHelp('Bilder werden beim Speichern web-optimiert (WebP, 2000/800/400 px, ohne Metadaten). Die Vorderseite ist das Hauptbild. Liegt ein Bild quer oder auf dem Kopf, mit den Knöpfen unter der Vorschau drehen; gedreht wird beim Speichern.');
+            ->setHelp('Bilder werden beim Speichern web-optimiert (WebP, 2000/800/400 px, ohne Metadaten). Die Vorderseite ist das Hauptbild. Mit den Knöpfen unter der Vorschau drehen oder zuschneiden, etwa wenn neben der Marke Text steht, den die KI sonst mitliest. Ausgeführt wird beides beim Speichern; den Zuschnitt eines Bildes aus dem Upload-Ordner kannst du später wieder aufheben.');
 
         // ---- Übersetzungen ----
         yield FormField::addTab('Übersetzungen', 'fa fa-language');
@@ -230,6 +235,9 @@ class ItemCrudController extends AbstractCrudController
         yield TextField::new('storageLocation', 'Lagerort (intern)')->setColumns(6)->hideOnIndex();
         yield TextField::new('sourceFolder', 'Upload-Ordner')->setColumns(6)->setDisabled()->hideOnIndex();
         yield TextareaField::new('internalNotes', 'Interne Notizen')->setNumOfRows(3)->hideOnIndex();
+        yield TextareaField::new('aiHint', 'Hinweis an die KI')->setNumOfRows(3)->hideOnIndex()
+            ->setFormTypeOption('attr', ['maxlength' => Item::AI_HINT_MAX, 'placeholder' => 'z. B. „DDR 1953, 24 Pf Karl Marx“ oder „Der Text unter der Marke gehört nicht dazu“'])
+            ->setHelp('Geht nach dem Speichern bei jeder KI-Erkennung mit und hat Vorrang vor der Einschätzung der KI. Bekannte Angaben eintragen, den Rest ergänzt die KI anhand der Fotos.');
         yield NumberField::new('aiConfidence', 'KI-Konfidenz')->setNumDecimals(2)->setDisabled()->setColumns(3)->hideOnIndex();
         yield TextField::new('aiModel', 'KI-Modell')->setDisabled()->setColumns(3)->hideOnIndex();
         yield DateTimeField::new('recognizedAt', 'Erkannt am')->setDisabled()->setColumns(3)->hideOnIndex();
@@ -372,18 +380,33 @@ class ItemCrudController extends AbstractCrudController
         return $this->redirectToRoute('admin_item_edit', ['entityId' => $item->getId()]);
     }
 
-    /** Neue/ersetzte Uploads web-optimiert speichern, gewünschte Drehungen ausführen, leere Einträge entfernen. */
+    /**
+     * Neue/ersetzte Uploads web-optimiert speichern, gewünschte Zuschnitte und Drehungen ausführen, leere Einträge entfernen.
+     * Der Zuschnitt aus dem Formular bezieht sich auf das Bild vor der neuen Drehung, deshalb erst zuschneiden, dann drehen.
+     */
     private function processImages(Item $item): void
     {
         $folder = 'items/'.($item->getSourceFolder() ?? 'manual-'.date('Ymd-His'));
         foreach ($item->getImages()->toArray() as $image) {
             $file = $image->getFile();
             $rotate = $image->getRotate();
-            $image->setRotate(0);
+            $crop = $this->cropChange($image->getCropChange());
+            $image->setRotate(0)->setCropChange(null);
             if (null === $file) {
                 if (null === $image->getPath()) {
                     $item->removeImage($image);
-                } elseif (0 !== $rotate) {
+                    continue;
+                }
+                try {
+                    if (self::CROP_RESET === $crop) {
+                        $this->cropper->reset($image);
+                    } elseif ($crop instanceof CropBox) {
+                        $this->cropper->crop($image, $crop);
+                    }
+                } catch (\RuntimeException $e) {
+                    $this->addFlash('warning', 'Ein Bild konnte nicht zugeschnitten werden: '.$e->getMessage());
+                }
+                if (0 !== $rotate) {
                     try {
                         $this->rotator->rotate($image, $rotate);
                     } catch (\RuntimeException $e) {
@@ -393,13 +416,33 @@ class ItemCrudController extends AbstractCrudController
                 continue;
             }
             $old = $image->getPath();
-            // die Drehung gilt für die neu gewählte Datei (das Formular zeigt sie in der Vorschau)
-            $saved = $this->media->store($file->getPathname(), $folder.'/'.bin2hex(random_bytes(3)), $rotate);
+            // Zuschnitt und Drehung gelten für die neu gewählte Datei (das Formular zeigt sie in der Vorschau)
+            $saved = $this->media->store($file->getPathname(), $folder.'/'.bin2hex(random_bytes(3)), $rotate, $crop instanceof CropBox ? $crop : null);
             $image->setPath($saved['path'])->setDimensions($saved['width'], $saved['height'])->setHash($saved['hash'])
-                ->setFile(null)->setSourceFile(null)->setRotation(0);
+                ->setFile(null)->setSourceFile(null)->setRotation(0)->setCrop(null);
             if (null !== $old) {
                 $this->media->delete($old);
             }
+        }
+    }
+
+    /** Feld „cropChange“ aus dem Formular: null (unverändert), CROP_RESET oder der Ausschnitt */
+    private function cropChange(?string $value): CropBox|string|null
+    {
+        if (null === $value || '' === trim($value)) {
+            return null;
+        }
+        if (self::CROP_RESET === $value) {
+            return self::CROP_RESET;
+        }
+        try {
+            $data = json_decode($value, true, 4, \JSON_THROW_ON_ERROR);
+
+            return \is_array($data) ? CropBox::fromArray($data) : throw new \InvalidArgumentException('Ungültiger Bildausschnitt.');
+        } catch (\JsonException|\InvalidArgumentException $e) {
+            $this->addFlash('warning', 'Ein Bild wurde nicht zugeschnitten: '.($e instanceof \JsonException ? 'Ungültiger Bildausschnitt.' : $e->getMessage()));
+
+            return null;
         }
     }
 }

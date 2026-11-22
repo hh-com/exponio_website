@@ -1,29 +1,117 @@
 {# Ergänzungen zum EasyAdmin-Formular-Theme #}
 
-{# Bild-Eintrag im Objekt-Formular: Vorschau mit Dreh-Knöpfen neben Datei, Seite, Alt-Text und Position.
-   Die Knöpfe drehen die Vorschau und setzen das versteckte Feld „rotate“; gedreht wird beim Speichern
-   (ItemCrudController::processImages()). Eine neu gewählte Datei zeigt assets/admin.ts gleich in der Vorschau. #}
+{# Bild-Eintrag im Objekt-Formular, Tab „Bilder“: Akkordeon wie collection_entry_row von EasyAdmin (gleiche Klassen,
+   damit Hinzufügen und Löschen funktionieren), im Kopf Vorschau, Seite und Größe. Das erste Bild, neue Einträge und
+   Einträge mit Fehlern sind aufgeklappt. #}
+{% block item_image_row %}
+    {% set collection = form_parent(form) %}
+    {% set image = form.vars.data and form.vars.data.path ? form.vars.data : null %}
+    {% set keys = collection.children|keys %}
+    {% set number = null %}
+    {% for key in keys %}{% if key == form.vars.name %}{% set number = loop.index %}{% endif %}{% endfor %}
+    {% set render_expanded = not form.vars.valid or image is null or form.vars.name == keys|first %}
+    {% set allows_deleting_items = collection.vars.allow_delete|default(false) %}
+
+    <div class="field-collection-item field-collection-item-complex item-image-item {{ not form.vars.valid ? 'is-invalid' }}">
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {{ render_expanded ? '' : 'collapsed' }}" type="button" data-bs-toggle="collapse" data-bs-target="#{{ id }}-contents" aria-controls="{{ id }}-contents" aria-expanded="{{ render_expanded ? 'true' : 'false' }}">
+                    <twig:ea:Icon name="internal:chevron-right" class="form-collection-item-collapse-marker" />
+                    <span class="item-image-head">
+                        {% if image %}
+                            <img class="item-image-head__thumb" src="{{ asset(image.relativePath(400)) }}" alt="" loading="lazy">
+                        {% else %}
+                            <span class="item-image-head__thumb item-image-head__thumb--empty" aria-hidden="true"><i class="fa fa-image"></i></span>
+                        {% endif %}
+                        <span class="item-image-head__text">
+                            <span class="item-image-head__title">
+                                {%- if image -%}
+                                    Bild {{ number }}{{ image.side ? ' · ' ~ image.side.label }}
+                                {%- else -%}
+                                    Neues Bild
+                                {%- endif -%}
+                            </span>
+                            {% if image %}
+                                <span class="item-image-head__meta">
+                                    {{ image.width }} × {{ image.height }} px
+                                    {%- if image.crop %} · zugeschnitten{% endif %}
+                                    {%- if not image.alt %} · ohne Alt-Text{% endif %}
+                                </span>
+                            {% endif %}
+                        </span>
+                    </span>
+                </button>
+                {% if allows_deleting_items and not disabled %}
+                    <button type="button" class="btn btn-link btn-link-danger field-collection-delete-button" title="Bild entfernen (beim Speichern)" aria-label="Bild entfernen">
+                        <twig:ea:Icon name="internal:delete" />
+                    </button>
+                {% endif %}
+            </h2>
+            <div id="{{ id }}-contents" class="accordion-collapse collapse {{ render_expanded ? 'show' }}">
+                <div class="accordion-body">
+                    {{ form_widget(form) }}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{# Inhalt eines Bild-Eintrags: links die Vorschau mit Drehen und Zuschneiden, rechts die Angaben.
+   Die Knöpfe ändern nur die Vorschau und die versteckten Felder „rotate“ und „cropChange“
+   (assets/admin/imageEditing.ts); ausgeführt wird beim Speichern (ItemCrudController::processImages()). #}
 {% block item_image_widget %}
     {% set image = form.vars.data and form.vars.data.path ? form.vars.data : null %}
-    <div class="item-image-entry" data-image-entry>
-        <div class="item-image-entry__preview" data-image-box {{ image ? '' : 'hidden' }}>
-            <a href="{{ image ? asset(image.relativePath) : '#' }}" target="_blank" rel="noopener" data-image-link data-original="{{ image ? asset(image.relativePath) : '' }}">
-                <img {% if image %}src="{{ asset(image.relativePath(400)) }}" {% endif %}alt="Vorschau (öffnet das Bild in voller Größe)" data-image-preview data-original="{{ image ? asset(image.relativePath(400)) : '' }}">
-            </a>
-            <div class="item-image-entry__rotate" role="group" aria-label="Bild drehen">
-                <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="-90" title="90° nach links drehen" aria-label="90° nach links drehen"><i class="fa fa-rotate-left"></i></button>
-                <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="180" title="Auf den Kopf stellen (180°)" aria-label="180° drehen">180°</button>
-                <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="90" title="90° nach rechts drehen" aria-label="90° nach rechts drehen"><i class="fa fa-rotate-right"></i></button>
+    <div class="item-image" data-image-entry
+         data-src="{{ image ? asset(image.relativePath(800)) : '' }}"
+         data-full="{{ image ? asset(image.relativePath) : '' }}"
+         data-cropped="{{ image and image.crop ? '1' : '0' }}">
+        <div class="item-image__media">
+            <div class="item-image__stage" data-image-box {{ image ? '' : 'hidden' }}>
+                <a href="{{ image ? asset(image.relativePath) : '#' }}" target="_blank" rel="noopener" data-image-link title="In voller Größe öffnen">
+                    <img {% if image %}src="{{ asset(image.relativePath(800)) }}" {% endif %}alt="Vorschau (öffnet das Bild in voller Größe)" data-image-preview>
+                </a>
+                <div class="item-image__tools" role="group" aria-label="Bild drehen und zuschneiden">
+                    <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="-90" title="90° nach links drehen" aria-label="90° nach links drehen"><i class="fa fa-rotate-left"></i></button>
+                    <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="180" title="Auf den Kopf stellen (180°)" aria-label="180° drehen">180°</button>
+                    <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="90" title="90° nach rechts drehen" aria-label="90° nach rechts drehen"><i class="fa fa-rotate-right"></i></button>
+                    <span class="item-image__tools-sep" aria-hidden="true"></span>
+                    <button type="button" class="btn btn-sm btn-default btn-ghost" data-crop-start title="Zuschneiden" aria-label="Zuschneiden"><i class="fa fa-crop-simple"></i></button>
+                    <button type="button" class="btn btn-sm btn-default btn-ghost" data-crop-reset title="Zuschnitt aufheben (ganzes Foto)" aria-label="Zuschnitt aufheben" aria-pressed="false" hidden><i class="fa fa-expand"></i></button>
+                </div>
             </div>
-            <small class="item-image-entry__hint" data-rotate-hint aria-live="polite"></small>
+            <div class="item-image__empty" data-image-empty {{ image ? 'hidden' }}>
+                <i class="fa fa-image" aria-hidden="true"></i>
+                <span>Datei wählen – die Vorschau erscheint hier.</span>
+            </div>
+            <p class="item-image__hint" data-image-hint aria-live="polite"></p>
             {{ form_widget(form.rotate) }}
+            {{ form_widget(form.cropChange) }}
         </div>
-        <div class="item-image-entry__fields">
-            {{ form_row(form.file) }}
-            <div class="item-image-entry__grid">
-                {{ form_row(form.side) }}
-                {{ form_row(form.alt) }}
-                {{ form_row(form.position) }}
+        <div class="item-image__fields">
+            <div class="item-image__row">
+                <div class="item-image__field">
+                    {{ form_label(form.side) }}
+                    {{ form_widget(form.side) }}
+                    {{ form_errors(form.side) }}
+                </div>
+                <div class="item-image__field">
+                    {{ form_label(form.position) }}
+                    {{ form_widget(form.position) }}
+                    {{ form_help(form.position) }}
+                    {{ form_errors(form.position) }}
+                </div>
+            </div>
+            <div class="item-image__field">
+                {{ form_label(form.alt) }}
+                {{ form_widget(form.alt) }}
+                {{ form_help(form.alt) }}
+                {{ form_errors(form.alt) }}
+            </div>
+            <div class="item-image__field">
+                {{ form_label(form.file, image ? 'Datei ersetzen' : 'Datei') }}
+                {{ form_widget(form.file) }}
+                {{ form_help(form.file) }}
+                {{ form_errors(form.file) }}
             </div>
         </div>
     </div>

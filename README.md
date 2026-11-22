@@ -24,7 +24,7 @@ Danach übersetzt Gemini alles in die Sprachen, die du freischaltest.
 | Sprachen | Seite „Sprachen“, `hreflang`, Schrift von rechts nach links (Arabisch, Hebräisch …), Formate nach Sprache |
 | SEO / GEO | Titel und Beschreibung je Seite, JSON-LD (WebSite, Person, ItemPage, CollectionPage, BreadcrumbList), Sitemap je Sprache mit Bildern, `robots.txt`, `llms.txt` – alles automatisch |
 | Backend | **Prüfen & freigeben**, Objekte (Textsuche + Filter), Objektarten mit Merkmalen, Länder & Gebiete, Themen, Nachrichten, Seiten, **Sprachen**, **Oberflächentexte**, **Einstellungen** (inkl. Name und Logo der Website, KI: Key, Modelle, Prompts) |
-| Import | Ein Upload-Ordner der App = ein Objekt. Der Upload-Ordner wird nur gelesen, die Originale bleiben unverändert |
+| Import | Ein Upload-Ordner der App = ein Objekt. Der Upload-Ordner wird nur gelesen, die Originale bleiben unverändert. Nur **Löschen** unter *Prüfen & freigeben* entfernt ihn zusammen mit dem Objekt |
 | Duplikate | Lädst du ein Objekt noch einmal hoch, wird der Upload dem vorhandenen Objekt zugeordnet und gezählt. Bessere Fotos ersetzen die alten (rückgängig machbar), unsichere Fälle entscheidest du unter **Prüfen & freigeben** |
 
 **URLs:** Deutsch hat deutsche Pfade (`/de/katalog`, `/de/katalog/1-briefmarken`, `/de/laender`, `/de/land/12-ddr`, `/de/themen`),
@@ -239,6 +239,22 @@ server {
    Objekt-Formular, Tab *Bilder*, unter der Vorschau (gedreht wird beim Speichern). Gedrehte Bilder bekommen neue
    Dateinamen. Die Drehung wird gespeichert, `app:media:rebuild` behält sie bei. Die Originale in `app_uploads/` bleiben
    unverändert.
+   Ist neben der Marke noch Albumtext zu sehen, den die KI mitliest, schneidest du das Foto zu: am großen Bild
+   (Zuschneide-Knopf, sofort gespeichert) oder im Objekt-Formular, Tab *Bilder* (Dialog, zugeschnitten wird beim
+   Speichern). Rahmen an Ecken und Kanten ziehen oder die Ränder mit Reglern einstellen. Die KI bekommt danach nur den
+   Ausschnitt; starte die Erkennung neu („Erneut erkennen“). Der Zuschnitt bezieht sich auf das Original, bleibt beim
+   Drehen und bei `app:media:rebuild` erhalten und lässt sich aufheben. Bei im Backend hochgeladenen Bildern (ohne
+   Original) ist er endgültig.
+   Liegt die KI daneben, trägst du unter *KI-Einschätzung* einen **Hinweis an die KI** ein, z. B. „DDR 1953, 24 Pf Karl
+   Marx“ oder „Der Text unter der Marke gehört nicht dazu“, und startest „Mit Hinweis erkennen“. Der Hinweis hat Vorrang
+   vor der Einschätzung der KI, den Rest ergänzt sie anhand der Fotos; widerspricht er den Fotos, steht das unter den
+   Hinweisen der KI. Er bleibt beim Objekt gespeichert (auch im Objekt-Formular, Tab *Intern & KI*) und gilt bei jeder
+   weiteren Erkennung, auch bei „Alle erkennen“.
+   **Archivieren** nimmt ein Objekt aus der Liste, ohne etwas zu löschen. Es ist nicht auf der Website und bleibt unter
+   *Objekte* (Filter Status „Archiviert“) erhalten. **Löschen** entfernt das Objekt nach einer Rückfrage endgültig:
+   mit allen Fotos und den Upload-Ordnern in `app_uploads/`, auch denen zugeordneter Duplikate. Das Scan-Protokoll
+   behält die Ordnernamen. Lässt sich ein Ordner nicht löschen (z. B. fehlende Schreibrechte), meldet die Seite das,
+   und der Ordner wird trotzdem nicht erneut importiert.
 6. `app:translate` übersetzt das Objekt in alle freigeschalteten Sprachen. Das gilt auch für die Alt-Texte neuer Fotos.
 
 Der Upload-Zähler erscheint nur im Backend: Spalte „Uploads“ und Filter „Mehrfach hochgeladen“ bei den Objekten
@@ -292,7 +308,8 @@ sowie eine Übersicht auf dem Dashboard.
 - **Prompts:** Alle drei Prompts sind im Backend editierbar: Erkennung, Übersetzung und Duplikat-Vergleich.
   Platzhalter `{{objektarten}}`, `{{laender}}`, `{{themen}}` und `{{sprache}}` füllt die Website. Das Antwortformat
   (JSON-Schema) bleibt im Code. Vorschauen zeigen den fertigen Erkennungs-Prompt und den Vergleichsauftrag für das
-  zuletzt erkannte Objekt. „Prompts auf Standard“ setzt alle zurück.
+  zuletzt erkannte Objekt. „Prompts auf Standard“ setzt alle zurück. Der Hinweis an die KI eines Objekts steht nicht
+  im Prompt, sondern im Auftrag zum Objekt (der feste Prompt bleibt gleich und kann zwischengespeichert werden).
 - **Duplikate:** Unter *Einstellungen → KI → Duplikate* lassen sich die Erkennung an- und ausschalten und die
   Schwellen einstellen: „Sicher ab“ (automatisch zuordnen, Standard 85 %) und „Hinweis ab“ (Standard 50 %). Außerdem
   gibt es dort den Schalter „Veröffentlichte Objekte automatisch aktualisieren“ (Standard aus: nur vorschlagen). Der

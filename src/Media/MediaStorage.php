@@ -13,7 +13,7 @@ use Symfony\Component\Filesystem\Filesystem;
  *   dadurch eine neue Adresse, und Browser dürfen die Dateien ein Jahr lang cachen.
  * - Das Neu-Kodieren mit GD entfernt alle Metadaten (EXIF, GPS-Position, Kameradaten).
  * - Zu jedem Bild entsteht ein Wahrnehmungs-Hash (ImageHasher) aus der 400-px-Variante – für die Duplikat-Erkennung.
- * - Eine Drehung (im Backend gesetzt) geht in den Hash ein: Das gedrehte Bild bekommt eine eigene Adresse.
+ * - Drehung und Zuschnitt (im Backend gesetzt) gehen in den Hash ein: Das geänderte Bild bekommt eine eigene Adresse.
  */
 final class MediaStorage
 {
@@ -32,12 +32,13 @@ final class MediaStorage
     }
 
     /**
-     * @param string $base     Zielpfad relativ zu media/ ohne Endung, z. B. items/2026-11-20_211530/01
-     * @param int    $rotation Drehung im Uhrzeigersinn in Grad (0, 90, 180, 270), nach der EXIF-Ausrichtung
+     * @param string       $base     Zielpfad relativ zu media/ ohne Endung, z. B. items/2026-11-20_211530/01
+     * @param int          $rotation Drehung im Uhrzeigersinn in Grad (0, 90, 180, 270), nach der EXIF-Ausrichtung
+     * @param CropBox|null $crop     Zuschnitt nach der EXIF-Ausrichtung, vor der Drehung
      *
      * @return array{path: string, width: int, height: int, hash: string|null} path = $base plus Inhalts-Hash, hash = Wahrnehmungs-Hash
      */
-    public function store(string $sourceFile, string $base, int $rotation = 0): array
+    public function store(string $sourceFile, string $base, int $rotation = 0, ?CropBox $crop = null): array
     {
         if (!\function_exists('imagewebp')) {
             throw new \RuntimeException('Die PHP-Erweiterung GD mit WebP-Unterstützung fehlt.');
@@ -50,11 +51,22 @@ final class MediaStorage
             throw new \RuntimeException(sprintf('Bild "%s" kann nicht gelesen werden.', basename($sourceFile)));
         }
         $image = $this->applyExifOrientation($image, $sourceFile);
+        if ($crop?->isFull()) {
+            $crop = null;
+        }
+        if (null !== $crop) {
+            $cropped = imagecrop($image, $crop->pixels(imagesx($image), imagesy($image)));
+            if (false === $cropped) {
+                throw new \RuntimeException('Bild konnte nicht zugeschnitten werden.');
+            }
+            $image = $cropped;
+        }
         $rotation = self::normalizeRotation($rotation);
         $image = $this->rotate($image, $rotation);
         $content = (string) sha1_file($sourceFile);
-        // ohne Drehung derselbe Name wie bisher; gedreht ein anderer, damit Browser nicht das alte Bild aus dem Cache zeigen
-        $base .= '-'.substr(0 === $rotation ? $content : sha1($content.'@'.$rotation), 0, 8);
+        // unverändert derselbe Name wie bisher; gedreht oder zugeschnitten ein anderer, damit Browser nicht das alte Bild aus dem Cache zeigen
+        $edit = 0 === $rotation && null === $crop ? '' : '@'.$rotation.(null === $crop ? '' : '#'.implode(',', $crop->toArray()));
+        $base .= '-'.substr('' === $edit ? $content : sha1($content.$edit), 0, 8);
         if (!imageistruecolor($image)) {
             imagepalettetotruecolor($image);
         }

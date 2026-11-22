@@ -14,6 +14,9 @@ use App\Entity\Topic;
 use App\Enum\ImageSide;
 use App\Enum\ItemStatus;
 use App\Import\FolderImporter;
+use App\Import\ItemRemover;
+use App\Media\CropBox;
+use App\Media\ImageCropper;
 use App\Media\ImageRotator;
 use App\Recognition\RecognitionApplier;
 use App\Recognition\RecognitionService;
@@ -54,6 +57,7 @@ final class ReviewApiController extends AbstractController
         private readonly EntityManagerInterface $em,
         private readonly AppExtension $app,
         private readonly Packages $packages,
+        private readonly ItemRemover $remover,
     ) {
     }
 
@@ -105,7 +109,7 @@ final class ReviewApiController extends AbstractController
                 $item->addTopic($topic);
             }
         }
-        foreach (['title', 'description', 'series', 'defects', 'metaDescription', 'internalNotes', 'storageLocation'] as $field) {
+        foreach (['title', 'description', 'series', 'defects', 'metaDescription', 'internalNotes', 'storageLocation', 'aiHint'] as $field) {
             if (\array_key_exists($field, $data)) {
                 $value = trim((string) $data[$field]);
                 $item->{'set'.ucfirst($field)}('' === $value ? null : $value);
@@ -166,12 +170,28 @@ final class ReviewApiController extends AbstractController
         return $this->json(['item' => $this->itemData($item)]);
     }
 
+    /** Objekt endgültig löschen – mit allen Fotos und seinen Upload-Ordnern (App\Import\ItemRemover). */
+    #[Route('/review/{id}/delete', name: 'review_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function delete(int $id, Request $request): JsonResponse
+    {
+        $this->checkCsrf($request);
+        $result = $this->remover->remove($this->find($id));
+
+        return $this->json(['deleted' => $id, ...$result]);
+    }
+
     #[Route('/review/{id}/recognize', name: 'review_recognize', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function recognize(int $id, Request $request, RecognitionService $recognition): JsonResponse
     {
         $this->checkCsrf($request);
         $this->releaseSession($request);
         $item = $this->find($id);
+        // der Hinweis an die KI aus dem Formular gilt gleich für diese Erkennung (und bleibt für spätere gespeichert)
+        $data = '' === $request->getContent() ? [] : $this->payload($request);
+        if (\array_key_exists('aiHint', $data)) {
+            $item->setAiHint(\is_string($data['aiHint']) ? $data['aiHint'] : null);
+            $this->em->flush();
+        }
         set_time_limit(600);
         $ok = $recognition->recognize($item);
         $duplicate = $recognition->lastDuplicate();
@@ -234,11 +254,13 @@ final class ReviewApiController extends AbstractController
     }
 
     /**
-     * Bilder sortieren, löschen und drehen: {order: [id, …], delete: [id, …], rotate: {id: Grad im Uhrzeigersinn}}.
-     * Jeder Schlüssel ist optional; Drehen erzeugt neue Bilddateien (App\Media\ImageRotator).
+     * Bilder sortieren, löschen, drehen und zuschneiden:
+     * {order: [id, …], delete: [id, …], rotate: {id: Grad im Uhrzeigersinn}, crop: {id: {x, y, w, h} oder null}}.
+     * Der Ausschnitt bezieht sich auf das angezeigte Bild (Anteile 0–1), null hebt den Zuschnitt auf.
+     * Jeder Schlüssel ist optional; Drehen und Zuschneiden erzeugen neue Bilddateien (App\Media\ImageRotator, ImageCropper).
      */
     #[Route('/review/{id}/images', name: 'review_images', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function images(int $id, Request $request, ImageRotator $rotator): JsonResponse
+    public function images(int $id, Request $request, ImageRotator $rotator, ImageCropper $cropper): JsonResponse
     {
         $this->checkCsrf($request);
         $item = $this->find($id);
@@ -246,12 +268,25 @@ final class ReviewApiController extends AbstractController
         $order = array_map('intval', \is_array($data['order'] ?? null) ? $data['order'] : []);
         $delete = array_map('intval', \is_array($data['delete'] ?? null) ? $data['delete'] : []);
         $rotate = \is_array($data['rotate'] ?? null) ? $data['rotate'] : [];
+        $crop = \is_array($data['crop'] ?? null) ? $data['crop'] : [];
         $error = null;
 
         foreach ($item->getImages()->toArray() as $image) {
             if (\in_array($image->getId(), $delete, true)) {
                 $item->removeImage($image);
                 continue;
+            }
+            if (\array_key_exists((int) $image->getId(), $crop)) {
+                $box = $crop[(int) $image->getId()];
+                try {
+                    if (null === $box) {
+                        $cropper->reset($image);
+                    } elseif (\is_array($box)) {
+                        $cropper->crop($image, CropBox::fromArray($box));
+                    }
+                } catch (\RuntimeException|\InvalidArgumentException $e) {
+                    $error = 'Bild konnte nicht zugeschnitten werden: '.$e->getMessage();
+                }
             }
             $degrees = $rotate[(int) $image->getId()] ?? null;
             if (is_numeric($degrees)) {
@@ -266,7 +301,7 @@ final class ReviewApiController extends AbstractController
                 $image->setPosition((int) $position);
             }
         }
-        // auch bei einem Fehler speichern: bereits gedrehte Bilder haben neue Dateien, die alten sind gelöscht
+        // auch bei einem Fehler speichern: bereits gedrehte oder zugeschnittene Bilder haben neue Dateien, die alten sind gelöscht
         $this->em->flush();
         if (null !== $error) {
             return $this->json(['error' => $error], 422);
@@ -385,7 +420,9 @@ final class ReviewApiController extends AbstractController
             'featured' => $item->isFeatured(),
             'internalNotes' => $item->getInternalNotes(),
             'storageLocation' => $item->getStorageLocation(),
+            'aiHint' => $item->getAiHint(),
             'sourceFolder' => $item->getSourceFolder(),
+            'folders' => $this->remover->folders($item),
             'createdAt' => $item->getCreatedAt()->format(\DATE_ATOM),
             'uploadCount' => $item->getUploadCount(),
             'images' => array_map($this->imageData(...), $item->getImages()->getValues()),
@@ -415,8 +452,12 @@ final class ReviewApiController extends AbstractController
             'thumb' => $this->packages->getUrl($image->getRelativePath(400)),
             'medium' => $this->packages->getUrl($image->getRelativePath(800)),
             'full' => $this->packages->getUrl($image->getRelativePath()),
+            'width' => $image->getWidth(),
+            'height' => $image->getHeight(),
             'side' => $image->getSide()?->value,
             'alt' => $image->getAlt(),
+            // Zuschnitt gegenüber dem Original, lässt sich aufheben
+            'cropped' => null !== $image->getCrop(),
         ];
     }
 

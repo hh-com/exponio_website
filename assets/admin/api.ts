@@ -31,8 +31,21 @@ export interface ImageData {
   thumb: string
   medium: string
   full: string
+  /** Größe der großen Variante (Seitenverhältnis für den Zuschnitt-Rahmen) */
+  width: number
+  height: number
   side: string | null
   alt: string | null
+  /** zugeschnitten, der Zuschnitt lässt sich aufheben */
+  cropped: boolean
+}
+
+/** Bildausschnitt in Anteilen (0–1) des angezeigten Bildes, Ursprung oben links */
+export interface CropRect {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 /** Hinweis „mögliches Duplikat von #ID“ */
@@ -91,7 +104,11 @@ export interface ItemData {
   featured: boolean
   internalNotes: string | null
   storageLocation: string | null
+  /** Hinweis an die KI: geht bei jeder Erkennung mit (höchstens AI_HINT_MAX Zeichen) */
+  aiHint: string | null
   sourceFolder: string | null
+  /** Upload-Ordner, die beim Löschen des Objekts mit gelöscht werden */
+  folders: string[]
   createdAt: string
   uploadCount: number
   images: ImageData[]
@@ -106,6 +123,9 @@ export class ApiError extends Error {
     super(message)
   }
 }
+
+/** wie Item::AI_HINT_MAX */
+export const AI_HINT_MAX = 2000
 
 export function createApi(base: string, csrf: string) {
   const root = base.replace(/\/review\/?$/, '')
@@ -129,13 +149,20 @@ export function createApi(base: string, csrf: string) {
     queue: () => request<{ items: QueueItem[]; meta: Meta }>(base),
     item: (id: number) => request<{ item: ItemData }>(`${base}/${id}`),
     save: (id: number, data: Partial<ItemData> & { action: string }) => request<{ item: ItemData }>(`${base}/${id}`, data),
-    /** progressId: Zwischenstand für den Toast (assets/admin/aiProgress.ts) */
-    recognize: (id: number, progressId?: string) => request<{ ok: boolean; error: string | null; item?: ItemData; merged?: MergedInfo; meta: Meta }>(`${base}/${id}/recognize`, {}, progressId),
+    /** Objekt endgültig löschen, samt Fotos und Upload-Ordnern; failed: Ordner, die sich nicht löschen ließen */
+    remove: (id: number) => request<{ deleted: number; folders: string[]; failed: Record<string, string> }>(`${base}/${id}/delete`, {}),
+    /**
+     * progressId: Zwischenstand für den Toast (assets/admin/aiProgress.ts).
+     * aiHint wird vorher gespeichert und gilt schon für diese Erkennung; ohne aiHint gilt der gespeicherte Hinweis.
+     */
+    recognize: (id: number, progressId?: string, aiHint?: string | null) => request<{ ok: boolean; error: string | null; item?: ItemData; merged?: MergedInfo; meta: Meta }>(`${base}/${id}/recognize`, aiHint === undefined ? {} : { aiHint }, progressId),
     duplicate: (id: number, action: 'keep' | 'replace' | 'separate') => request<{ item?: ItemData; merged?: MergedInfo }>(`${base}/${id}/duplicate`, { action }),
     proposal: (id: number, uploadId: number, action: 'accept' | 'reject') => request<{ item: ItemData }>(`${base}/${id}/proposal/${uploadId}`, { action }),
     images: (id: number, order: number[], remove: number[]) => request<{ item: ItemData }>(`${base}/${id}/images`, { order, delete: remove }),
     /** degrees im Uhrzeigersinn (90, 180, -90); erzeugt neue Bilddateien mit neuen Adressen */
     rotateImage: (id: number, imageId: number, degrees: number) => request<{ item: ItemData }>(`${base}/${id}/images`, { rotate: { [imageId]: degrees } }),
+    /** rect = Ausschnitt des angezeigten Bildes, null hebt den Zuschnitt auf; erzeugt neue Bilddateien mit neuen Adressen */
+    cropImage: (id: number, imageId: number, rect: CropRect | null) => request<{ item: ItemData }>(`${base}/${id}/images`, { crop: { [imageId]: rect } }),
     scan: () => request<{ imported: number; failed: Record<string, string> }>(`${root}/scan`, {}),
     createCategory: (nameDe: string, parentId: number | null) => request<{ id: number; label: string }>(`${root}/categories`, { nameDe, parentId }),
     createTopic: (nameDe: string) => request<{ id: number; name: string }>(`${root}/topics`, { nameDe }),

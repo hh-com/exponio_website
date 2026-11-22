@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use App\Enum\ImageSide;
+use App\Media\CropBox;
 use App\Translation\TranslatableInterface;
 use App\Translation\TranslatableTrait;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -74,6 +75,16 @@ class ItemImage implements TranslatableInterface
     #[ORM\Column(type: 'smallint', options: ['default' => 0])]
     private int $rotation = 0;
 
+    /**
+     * Im Backend gesetzter Zuschnitt gegenüber dem Original (Anteile 0–1, vor der Drehung angewandt),
+     * damit app:media:rebuild ihn beibehält. Ohne Original steckt der Zuschnitt direkt in den Webbildern
+     * und der Wert bleibt null. Siehe App\Media\ImageCropper.
+     *
+     * @var array<string, float>|null {x, y, w, h}
+     */
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $crop = null;
+
     /** @var Collection<string, ItemImageTranslation> */
     #[ORM\OneToMany(targetEntity: ItemImageTranslation::class, mappedBy: 'image', cascade: ['persist', 'remove'], orphanRemoval: true, indexBy: 'locale')]
     private Collection $translations;
@@ -84,6 +95,12 @@ class ItemImage implements TranslatableInterface
 
     /** Nur für das Objekt-Formular im Backend, nicht gespeichert: beim Speichern so weit drehen (Grad im Uhrzeigersinn) */
     private int $rotate = 0;
+
+    /**
+     * Nur für das Objekt-Formular im Backend, nicht gespeichert: beim Speichern zuschneiden.
+     * JSON {x, y, w, h} (Ausschnitt des gespeicherten Bildes vor der Drehung aus $rotate, siehe CropBox), "reset" hebt den Zuschnitt auf.
+     */
+    private ?string $cropChange = null;
 
     public function __construct()
     {
@@ -233,6 +250,18 @@ class ItemImage implements TranslatableInterface
         return $this;
     }
 
+    public function getCrop(): ?CropBox
+    {
+        return null === $this->crop ? null : CropBox::fromArray($this->crop);
+    }
+
+    public function setCrop(?CropBox $crop): static
+    {
+        $this->crop = $crop?->toArray();
+
+        return $this;
+    }
+
     public function getRotate(): int
     {
         return $this->rotate;
@@ -241,6 +270,18 @@ class ItemImage implements TranslatableInterface
     public function setRotate(?int $rotate): static
     {
         $this->rotate = $rotate ?? 0;
+
+        return $this;
+    }
+
+    public function getCropChange(): ?string
+    {
+        return $this->cropChange;
+    }
+
+    public function setCropChange(?string $cropChange): static
+    {
+        $this->cropChange = '' === $cropChange ? null : $cropChange;
 
         return $this;
     }

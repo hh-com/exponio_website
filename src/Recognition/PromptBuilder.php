@@ -18,12 +18,14 @@ use App\Repository\TopicRepository;
  * Baut den Prompt (aus den Einstellungen, Platzhalter gefüllt) und das JSON-Schema der Antwort.
  *
  * Reihenfolge für Geminis automatisches Caching: erst der feste Prompt mit den Listen,
- * danach die wechselnden Teile (Auftrag und Bilder).
+ * danach die wechselnden Teile (Auftrag samt Hinweis an die KI, dann die Bilder).
  */
 final class PromptBuilder
 {
     public const MAX_IMAGES = 4;
     private const MAX_LIST = 400;
+    /** Vor dem Hinweis an die KI (Item::$aiHint). Er steht im wechselnden Teil der Anfrage, der feste Prompt bleibt gleich. */
+    private const HINT_INTRO = 'Hinweis des Sammlers zu diesem Objekt. Er kennt das Stück: Seine Angaben haben Vorrang vor deiner eigenen Einschätzung und gelten als gesichert. Übernimm sie und ergänze den Rest anhand der Fotos. Widerspricht der Hinweis deutlich dem, was auf den Fotos zu sehen ist, erkläre das in "notes".';
 
     public function __construct(
         private readonly CollectionAreaRepository $areas,
@@ -54,6 +56,9 @@ final class PromptBuilder
             1 === \count($images) ? '' : 's',
             $item->getArea()?->getName() ?? 'unbekannt',
         );
+        if (null !== $hint = $item->getAiHint()) {
+            $text .= "\n\n".self::HINT_INTRO."\n\"\"\"\n".$hint."\n\"\"\"";
+        }
 
         return new RecognitionRequest($item, $this->instructions($areas), $text, $images, $this->schema($areas), $areas);
     }

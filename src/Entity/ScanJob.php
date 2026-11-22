@@ -87,6 +87,15 @@ class ScanJob
         return $this;
     }
 
+    /** Objekt wurde gelöscht: Der Eintrag bleibt, damit der Ordner nicht erneut importiert wird. */
+    public function detach(string $message): static
+    {
+        $this->item = null;
+        $this->message = $message;
+
+        return $this;
+    }
+
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;

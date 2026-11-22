@@ -34,6 +34,8 @@ class Item implements \Stringable, TranslatableInterface
     /** @use TranslatableTrait<ItemTranslation> */
     use TranslatableTrait;
 
+    public const AI_HINT_MAX = 2000;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -108,6 +110,13 @@ class Item implements \Stringable, TranslatableInterface
 
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $internalNotes = null;
+
+    /**
+     * Hinweis an die KI, z. B. „DDR 1953, 24 Pf Karl Marx“ oder „Der Text unter der Marke gehört nicht dazu“.
+     * Geht bei jeder Erkennung mit und hat Vorrang vor der Einschätzung der KI (PromptBuilder). Höchstens AI_HINT_MAX Zeichen.
+     */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $aiHint = null;
 
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
@@ -809,6 +818,19 @@ class Item implements \Stringable, TranslatableInterface
     public function setInternalNotes(?string $internalNotes): static
     {
         $this->internalNotes = $internalNotes;
+
+        return $this;
+    }
+
+    public function getAiHint(): ?string
+    {
+        return $this->aiHint;
+    }
+
+    public function setAiHint(?string $aiHint): static
+    {
+        $aiHint = null === $aiHint ? '' : trim(mb_substr($aiHint, 0, self::AI_HINT_MAX));
+        $this->aiHint = '' === $aiHint ? null : $aiHint;
 
         return $this;
     }

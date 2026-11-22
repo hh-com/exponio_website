@@ -17,7 +17,8 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
  * Ein Bild im Objekt-Formular: Datei, Seite (Vorder-/Rückseite/Detail), Alt-Text, Reihenfolge
- * und die gewünschte Drehung (verstecktes Feld, gesetzt von den Dreh-Knöpfen in admin/form/theme.html.twig).
+ * und die gewünschte Drehung und der Zuschnitt (versteckte Felder, gesetzt von den Knöpfen in admin/form/theme.html.twig
+ * und assets/admin/imageEditing.ts). Ausgeführt wird beides beim Speichern (ItemCrudController::processImages()).
  *
  * @extends AbstractType<ItemImage>
  */
@@ -27,7 +28,8 @@ final class ItemImageType extends AbstractType
     {
         $builder
             ->add('file', FileType::class, [
-                'label' => 'Datei (JPEG, PNG, WebP)',
+                'label' => 'Datei',
+                'help' => 'JPEG, PNG, WebP oder AVIF, höchstens 25 MB.',
                 'required' => false,
                 'attr' => ['accept' => 'image/jpeg,image/png,image/webp,image/avif'],
             ])
@@ -41,15 +43,20 @@ final class ItemImageType extends AbstractType
             ->add('alt', TextType::class, [
                 'label' => 'Alt-Text (für Screenreader)',
                 'required' => false,
-                'help' => 'Kurz beschreiben, was zu sehen ist. Die KI füllt das Feld vor.',
+                'help' => 'Kurz beschreiben, was zu sehen ist (höchstens 255 Zeichen). Die KI füllt das Feld vor.',
                 'attr' => ['maxlength' => 255],
             ])
             ->add('position', IntegerType::class, [
                 'label' => 'Reihenfolge',
                 'required' => false,
+                'help' => 'Kleinere Zahl steht weiter vorne.',
             ])
             ->add('rotate', HiddenType::class, [
                 'attr' => ['data-image-rotate' => ''],
+            ])
+            ->add('cropChange', HiddenType::class, [
+                'required' => false,
+                'attr' => ['data-image-crop' => ''],
             ]);
 
         // Grad im Uhrzeigersinn; nur 0, 90, 180 und 270 kommen durch
