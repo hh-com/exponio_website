@@ -15,7 +15,7 @@ const filter = ref<'all' | 'pending' | 'review' | 'duplicate' | 'error'>('all')
 const currentId = ref<number | null>(null)
 const original = ref<ItemData | null>(null)
 const form = ref<ItemData | null>(null)
-const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate'>('load')
+const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate' | 'rotate'>('load')
 const batch = ref({ done: 0, total: 0 })
 const errors = ref<Record<string, string>>({})
 const activeImage = ref(0)
@@ -305,6 +305,31 @@ async function moveImage(index: number, step: number) {
   activeImage.value = target
 }
 
+/** Bild drehen (sofort gespeichert). Ungespeicherte Angaben zu Seite und Alt-Text bleiben erhalten. */
+async function rotateImage(index: number, degrees: number) {
+  const image = form.value?.images[index]
+  if (!form.value || !image || busy.value) return
+  const itemId = form.value.id
+  busy.value = 'rotate'
+  try {
+    const data = await api.rotateImage(itemId, image.id, degrees)
+    const fresh = data.item.images.find((i) => i.id === image.id)
+    if (fresh && form.value?.id === itemId) {
+      // nur die Adressen übernehmen, sonst gingen ungespeicherte Eingaben verloren
+      for (const list of [form.value.images, original.value?.images ?? []]) {
+        const target = list.find((i) => i.id === image.id)
+        if (target) Object.assign(target, { thumb: fresh.thumb, medium: fresh.medium, full: fresh.full })
+      }
+    }
+    const entry = queue.value.find((q) => q.id === itemId)
+    if (entry) entry.thumb = data.item.images[0]?.thumb ?? null
+  } catch (e) {
+    flash('danger', (e as Error).message)
+  } finally {
+    busy.value = ''
+  }
+}
+
 async function deleteImage(id: number) {
   if (!form.value || !confirm('Bild endgültig löschen?')) return
   const data = await api.images(form.value.id, form.value.images.map((i) => i.id), [id])
@@ -536,11 +561,17 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
         <div class="tw:grid tw:gap-5 tw:xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <!-- Bilder + KI -->
           <div class="tw:space-y-4">
-            <div class="tw:overflow-hidden tw:rounded-2xl tw:border tw:border-line tw:bg-soft">
+            <div class="tw:relative tw:overflow-hidden tw:rounded-2xl tw:border tw:border-line tw:bg-soft">
               <a v-if="form.images[activeImage]" :href="form.images[activeImage].full" target="_blank" class="tw:block tw:aspect-square">
-                <img :src="form.images[activeImage].medium" alt="" class="tw:size-full tw:object-contain tw:p-4">
+                <img :src="form.images[activeImage].medium" alt="" class="tw:size-full tw:object-contain tw:p-4 tw:transition-opacity" :class="busy === 'rotate' ? 'tw:opacity-40' : ''">
               </a>
               <div v-else class="tw:grid tw:aspect-square tw:place-items-center tw:opacity-50">Keine Bilder</div>
+              <!-- Drehen: liegt ein Foto quer oder auf dem Kopf -->
+              <div v-if="form.images[activeImage]" class="tw:absolute tw:right-2 tw:bottom-2 tw:flex tw:gap-1 tw:rounded-xl tw:bg-white/90 tw:p-1 tw:shadow-sm" role="group" :aria-label="`Bild ${activeImage + 1} drehen`">
+                <button type="button" class="btn btn-default btn-ghost btn-sm" title="90° nach links drehen" aria-label="90° nach links drehen" :disabled="!!busy" @click="rotateImage(activeImage, -90)"><i class="fa fa-rotate-left" /></button>
+                <button type="button" class="btn btn-default btn-ghost btn-sm" title="Auf den Kopf stellen (180°)" aria-label="180° drehen" :disabled="!!busy" @click="rotateImage(activeImage, 180)">180°</button>
+                <button type="button" class="btn btn-default btn-ghost btn-sm" title="90° nach rechts drehen" aria-label="90° nach rechts drehen" :disabled="!!busy" @click="rotateImage(activeImage, 90)"><i class="fa fa-rotate-right" /></button>
+              </div>
             </div>
             <div v-if="form.images.length" class="tw:flex tw:flex-wrap tw:gap-2">
               <div v-for="(image, i) in form.images" :key="image.id" class="tw:group tw:relative">

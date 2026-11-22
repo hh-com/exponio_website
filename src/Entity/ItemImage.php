@@ -66,6 +66,14 @@ class ItemImage implements TranslatableInterface
     #[ORM\Column(length: 190, nullable: true)]
     private ?string $sourceFile = null;
 
+    /**
+     * Im Backend gesetzte Drehung gegenüber dem Original (Grad im Uhrzeigersinn: 0, 90, 180, 270),
+     * damit app:media:rebuild sie beibehält. Ohne Original (im Backend hochgeladen) steckt die Drehung
+     * direkt in den Webbildern und der Wert bleibt 0. Siehe App\Media\ImageRotator.
+     */
+    #[ORM\Column(type: 'smallint', options: ['default' => 0])]
+    private int $rotation = 0;
+
     /** @var Collection<string, ItemImageTranslation> */
     #[ORM\OneToMany(targetEntity: ItemImageTranslation::class, mappedBy: 'image', cascade: ['persist', 'remove'], orphanRemoval: true, indexBy: 'locale')]
     private Collection $translations;
@@ -73,6 +81,9 @@ class ItemImage implements TranslatableInterface
     /** Nur für Uploads im Backend, nicht gespeichert */
     #[Assert\Image(maxSize: '25M', mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif'])]
     private ?UploadedFile $file = null;
+
+    /** Nur für das Objekt-Formular im Backend, nicht gespeichert: beim Speichern so weit drehen (Grad im Uhrzeigersinn) */
+    private int $rotate = 0;
 
     public function __construct()
     {
@@ -206,6 +217,30 @@ class ItemImage implements TranslatableInterface
     public function setSourceFile(?string $sourceFile): static
     {
         $this->sourceFile = $sourceFile;
+
+        return $this;
+    }
+
+    public function getRotation(): int
+    {
+        return $this->rotation;
+    }
+
+    public function setRotation(int $rotation): static
+    {
+        $this->rotation = $rotation;
+
+        return $this;
+    }
+
+    public function getRotate(): int
+    {
+        return $this->rotate;
+    }
+
+    public function setRotate(?int $rotate): static
+    {
+        $this->rotate = $rotate ?? 0;
 
         return $this;
     }

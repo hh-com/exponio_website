@@ -10,6 +10,7 @@ use App\Enum\ItemStatus;
 use App\Form\Admin\ItemAttributesType;
 use App\Form\Admin\ItemImageType;
 use App\Form\Admin\TranslationType;
+use App\Media\ImageRotator;
 use App\Media\MediaStorage;
 use App\Recognition\RecognitionService;
 use App\Repository\CollectionAreaRepository;
@@ -72,6 +73,7 @@ class ItemCrudController extends AbstractCrudController
         private readonly ItemRepository $items,
         private readonly LanguageRepository $languages,
         private readonly MediaStorage $media,
+        private readonly ImageRotator $rotator,
         private readonly SettingsProvider $settings,
         private readonly AppExtension $app,
         private readonly Packages $packages,
@@ -210,7 +212,7 @@ class ItemCrudController extends AbstractCrudController
             ->allowDelete()
             ->setFormTypeOption('by_reference', false)
             ->onlyOnForms()
-            ->setHelp('Bilder werden beim Speichern web-optimiert (WebP, 2000/800/400 px, ohne Metadaten). Die Vorderseite ist das Hauptbild.');
+            ->setHelp('Bilder werden beim Speichern web-optimiert (WebP, 2000/800/400 px, ohne Metadaten). Die Vorderseite ist das Hauptbild. Liegt ein Bild quer oder auf dem Kopf, mit den Knöpfen unter der Vorschau drehen; gedreht wird beim Speichern.');
 
         // ---- Übersetzungen ----
         yield FormField::addTab('Übersetzungen', 'fa fa-language');
@@ -370,21 +372,31 @@ class ItemCrudController extends AbstractCrudController
         return $this->redirectToRoute('admin_item_edit', ['entityId' => $item->getId()]);
     }
 
-    /** Neue/ersetzte Uploads web-optimiert speichern, leere Einträge entfernen. */
+    /** Neue/ersetzte Uploads web-optimiert speichern, gewünschte Drehungen ausführen, leere Einträge entfernen. */
     private function processImages(Item $item): void
     {
         $folder = 'items/'.($item->getSourceFolder() ?? 'manual-'.date('Ymd-His'));
         foreach ($item->getImages()->toArray() as $image) {
             $file = $image->getFile();
+            $rotate = $image->getRotate();
+            $image->setRotate(0);
             if (null === $file) {
                 if (null === $image->getPath()) {
                     $item->removeImage($image);
+                } elseif (0 !== $rotate) {
+                    try {
+                        $this->rotator->rotate($image, $rotate);
+                    } catch (\RuntimeException $e) {
+                        $this->addFlash('warning', 'Ein Bild konnte nicht gedreht werden: '.$e->getMessage());
+                    }
                 }
                 continue;
             }
             $old = $image->getPath();
-            $saved = $this->media->store($file->getPathname(), $folder.'/'.bin2hex(random_bytes(3)));
-            $image->setPath($saved['path'])->setDimensions($saved['width'], $saved['height'])->setHash($saved['hash'])->setFile(null)->setSourceFile(null);
+            // die Drehung gilt für die neu gewählte Datei (das Formular zeigt sie in der Vorschau)
+            $saved = $this->media->store($file->getPathname(), $folder.'/'.bin2hex(random_bytes(3)), $rotate);
+            $image->setPath($saved['path'])->setDimensions($saved['width'], $saved['height'])->setHash($saved['hash'])
+                ->setFile(null)->setSourceFile(null)->setRotation(0);
             if (null !== $old) {
                 $this->media->delete($old);
             }

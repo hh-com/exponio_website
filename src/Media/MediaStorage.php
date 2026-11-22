@@ -13,6 +13,7 @@ use Symfony\Component\Filesystem\Filesystem;
  *   dadurch eine neue Adresse, und Browser dürfen die Dateien ein Jahr lang cachen.
  * - Das Neu-Kodieren mit GD entfernt alle Metadaten (EXIF, GPS-Position, Kameradaten).
  * - Zu jedem Bild entsteht ein Wahrnehmungs-Hash (ImageHasher) aus der 400-px-Variante – für die Duplikat-Erkennung.
+ * - Eine Drehung (im Backend gesetzt) geht in den Hash ein: Das gedrehte Bild bekommt eine eigene Adresse.
  */
 final class MediaStorage
 {
@@ -31,11 +32,12 @@ final class MediaStorage
     }
 
     /**
-     * @param string $base Zielpfad relativ zu media/ ohne Endung, z. B. items/2026-11-20_211530/01
+     * @param string $base     Zielpfad relativ zu media/ ohne Endung, z. B. items/2026-11-20_211530/01
+     * @param int    $rotation Drehung im Uhrzeigersinn in Grad (0, 90, 180, 270), nach der EXIF-Ausrichtung
      *
      * @return array{path: string, width: int, height: int, hash: string|null} path = $base plus Inhalts-Hash, hash = Wahrnehmungs-Hash
      */
-    public function store(string $sourceFile, string $base): array
+    public function store(string $sourceFile, string $base, int $rotation = 0): array
     {
         if (!\function_exists('imagewebp')) {
             throw new \RuntimeException('Die PHP-Erweiterung GD mit WebP-Unterstützung fehlt.');
@@ -48,7 +50,11 @@ final class MediaStorage
             throw new \RuntimeException(sprintf('Bild "%s" kann nicht gelesen werden.', basename($sourceFile)));
         }
         $image = $this->applyExifOrientation($image, $sourceFile);
-        $base .= '-'.substr((string) sha1_file($sourceFile), 0, 8);
+        $rotation = self::normalizeRotation($rotation);
+        $image = $this->rotate($image, $rotation);
+        $content = (string) sha1_file($sourceFile);
+        // ohne Drehung derselbe Name wie bisher; gedreht ein anderer, damit Browser nicht das alte Bild aus dem Cache zeigen
+        $base .= '-'.substr(0 === $rotation ? $content : sha1($content.'@'.$rotation), 0, 8);
         if (!imageistruecolor($image)) {
             imagepalettetotruecolor($image);
         }
@@ -83,6 +89,20 @@ final class MediaStorage
         if (is_dir($dir) && [] === array_diff(scandir($dir) ?: [], ['.', '..'])) {
             @rmdir($dir);
         }
+    }
+
+    /** Pfad ohne den Inhalts-Hash am Ende (items/…/01-3f9a2c1d → items/…/01) */
+    public static function stripContentHash(string $path): string
+    {
+        return (string) preg_replace('/-[0-9a-f]{8}$/', '', $path);
+    }
+
+    /** Grad im Uhrzeigersinn auf 0, 90, 180 oder 270 bringen (-90 → 270, 450 → 90; sonst auf 90er gerundet) */
+    public static function normalizeRotation(int $degrees): int
+    {
+        $degrees = (int) round($degrees / 90) * 90 % 360;
+
+        return $degrees < 0 ? $degrees + 360 : $degrees;
     }
 
     public function absolutePath(string $base, ?int $size = null): string
@@ -161,6 +181,20 @@ final class MediaStorage
         if (!imagewebp($image, $file, $quality)) {
             throw new \RuntimeException(sprintf('"%s" konnte nicht geschrieben werden.', $file));
         }
+    }
+
+    /** Im Uhrzeigersinn drehen ($degrees aus normalizeRotation()); GD dreht gegen den Uhrzeigersinn */
+    private function rotate(\GdImage $image, int $degrees): \GdImage
+    {
+        if (0 === $degrees) {
+            return $image;
+        }
+        $rotated = imagerotate($image, -$degrees, 0);
+        if (false === $rotated) {
+            throw new \RuntimeException('Bild konnte nicht gedreht werden.');
+        }
+
+        return $rotated;
     }
 
     private function applyExifOrientation(\GdImage $image, string $file): \GdImage

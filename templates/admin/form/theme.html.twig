@@ -1,16 +1,26 @@
 {# Ergänzungen zum EasyAdmin-Formular-Theme #}
 
-{# Bild-Eintrag im Objekt-Formular: Vorschau neben Datei, Seite, Alt-Text und Position #}
+{# Bild-Eintrag im Objekt-Formular: Vorschau mit Dreh-Knöpfen neben Datei, Seite, Alt-Text und Position.
+   Die Knöpfe drehen die Vorschau und setzen das versteckte Feld „rotate“; gedreht wird beim Speichern
+   (ItemCrudController::processImages()). Eine neu gewählte Datei zeigt assets/admin.ts gleich in der Vorschau. #}
 {% block item_image_widget %}
-    <div class="item-image-entry" style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
-        {% if form.vars.data and form.vars.data.path %}
-            <a href="{{ asset(form.vars.data.relativePath) }}" target="_blank" rel="noopener" style="flex:none">
-                <img src="{{ asset(form.vars.data.relativePath(400)) }}" alt="" style="width:120px;height:120px;object-fit:contain;background:#f2ede2;border-radius:10px;padding:6px;border:1px solid var(--border-color, #e7e1d6)">
+    {% set image = form.vars.data and form.vars.data.path ? form.vars.data : null %}
+    <div class="item-image-entry" data-image-entry>
+        <div class="item-image-entry__preview" data-image-box {{ image ? '' : 'hidden' }}>
+            <a href="{{ image ? asset(image.relativePath) : '#' }}" target="_blank" rel="noopener" data-image-link data-original="{{ image ? asset(image.relativePath) : '' }}">
+                <img {% if image %}src="{{ asset(image.relativePath(400)) }}" {% endif %}alt="Vorschau (öffnet das Bild in voller Größe)" data-image-preview data-original="{{ image ? asset(image.relativePath(400)) : '' }}">
             </a>
-        {% endif %}
-        <div style="flex:1;min-width:220px">
+            <div class="item-image-entry__rotate" role="group" aria-label="Bild drehen">
+                <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="-90" title="90° nach links drehen" aria-label="90° nach links drehen"><i class="fa fa-rotate-left"></i></button>
+                <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="180" title="Auf den Kopf stellen (180°)" aria-label="180° drehen">180°</button>
+                <button type="button" class="btn btn-sm btn-default btn-ghost" data-rotate-step="90" title="90° nach rechts drehen" aria-label="90° nach rechts drehen"><i class="fa fa-rotate-right"></i></button>
+            </div>
+            <small class="item-image-entry__hint" data-rotate-hint aria-live="polite"></small>
+            {{ form_widget(form.rotate) }}
+        </div>
+        <div class="item-image-entry__fields">
             {{ form_row(form.file) }}
-            <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:1rem">
+            <div class="item-image-entry__grid">
                 {{ form_row(form.side) }}
                 {{ form_row(form.alt) }}
                 {{ form_row(form.position) }}

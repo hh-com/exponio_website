@@ -15,7 +15,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Erzeugt die Webbilder (WebP 2000/800/400 px) neu aus den Originalen im Upload-Ordner der App.
  * Nützlich nach einem Update, Umzug oder einer neuen Bildqualität. Da der Dateiname vom Inhalt
- * des Originals abhängt, bleiben alle Adressen gleich.
+ * des Originals abhängt, bleiben alle Adressen gleich. Im Backend gesetzte Drehungen bleiben erhalten.
  */
 #[AsCommand(name: 'app:media:rebuild', description: 'Erzeugt fehlende (oder mit --all alle) Webbilder neu aus den App-Uploads.')]
 final class MediaRebuildCommand extends Command
@@ -53,8 +53,8 @@ final class MediaRebuildCommand extends Command
                 $io->writeln(sprintf('<comment>kein Original</comment> Bild #%d (%s)', $image->getId(), $path));
                 continue;
             }
-            // Pfad ohne Hash: der Hash hängt vom Original ab und ergibt wieder denselben Namen
-            $saved = $this->media->store($original, (string) preg_replace('/-[0-9a-f]{8}$/', '', $path));
+            // Pfad ohne Hash: der Hash hängt vom Original (und der Drehung) ab und ergibt wieder denselben Namen
+            $saved = $this->media->store($original, MediaStorage::stripContentHash($path), $image->getRotation());
             $image->setPath($saved['path'])->setDimensions($saved['width'], $saved['height'])->setHash($saved['hash']);
             ++$done;
         }

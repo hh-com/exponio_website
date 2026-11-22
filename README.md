@@ -235,6 +235,10 @@ server {
      Historie vermerkt „anderes Exemplar“.
 5. Unter **Prüfen & freigeben** kontrollieren, korrigieren, **Freigeben & weiter** (Strg+Enter). Den Schätzwert gibst du
    bei Bedarf mit „Schätzwert auf der Website anzeigen“ frei. Standard ist aus.
+   Liegt ein Foto quer oder auf dem Kopf, drehst du es mit den Knöpfen am großen Bild (sofort gespeichert) oder im
+   Objekt-Formular, Tab *Bilder*, unter der Vorschau (gedreht wird beim Speichern). Gedrehte Bilder bekommen neue
+   Dateinamen. Die Drehung wird gespeichert, `app:media:rebuild` behält sie bei. Die Originale in `app_uploads/` bleiben
+   unverändert.
 6. `app:translate` übersetzt das Objekt in alle freigeschalteten Sprachen. Das gilt auch für die Alt-Texte neuer Fotos.
 
 Der Upload-Zähler erscheint nur im Backend: Spalte „Uploads“ und Filter „Mehrfach hochgeladen“ bei den Objekten

@@ -4,16 +4,20 @@ namespace App\Form\Admin;
 
 use App\Entity\ItemImage;
 use App\Enum\ImageSide;
+use App\Media\MediaStorage;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\CallbackTransformer;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\FileType;
+use Symfony\Component\Form\Extension\Core\Type\HiddenType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
 /**
- * Ein Bild im Objekt-Formular: Datei, Seite (Vorder-/Rückseite/Detail), Alt-Text, Reihenfolge.
+ * Ein Bild im Objekt-Formular: Datei, Seite (Vorder-/Rückseite/Detail), Alt-Text, Reihenfolge
+ * und die gewünschte Drehung (verstecktes Feld, gesetzt von den Dreh-Knöpfen in admin/form/theme.html.twig).
  *
  * @extends AbstractType<ItemImage>
  */
@@ -43,7 +47,16 @@ final class ItemImageType extends AbstractType
             ->add('position', IntegerType::class, [
                 'label' => 'Reihenfolge',
                 'required' => false,
+            ])
+            ->add('rotate', HiddenType::class, [
+                'attr' => ['data-image-rotate' => ''],
             ]);
+
+        // Grad im Uhrzeigersinn; nur 0, 90, 180 und 270 kommen durch
+        $builder->get('rotate')->addModelTransformer(new CallbackTransformer(
+            static fn (?int $degrees): string => (string) ($degrees ?? 0),
+            static fn (?string $value): int => MediaStorage::normalizeRotation((int) $value),
+        ));
     }
 
     public function configureOptions(OptionsResolver $resolver): void

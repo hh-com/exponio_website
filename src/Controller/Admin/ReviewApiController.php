@@ -14,6 +14,7 @@ use App\Entity\Topic;
 use App\Enum\ImageSide;
 use App\Enum\ItemStatus;
 use App\Import\FolderImporter;
+use App\Media\ImageRotator;
 use App\Recognition\RecognitionApplier;
 use App\Recognition\RecognitionService;
 use App\Repository\CategoryRepository;
@@ -232,26 +233,44 @@ final class ReviewApiController extends AbstractController
         return $this->json(['item' => $this->itemData($item)]);
     }
 
+    /**
+     * Bilder sortieren, löschen und drehen: {order: [id, …], delete: [id, …], rotate: {id: Grad im Uhrzeigersinn}}.
+     * Jeder Schlüssel ist optional; Drehen erzeugt neue Bilddateien (App\Media\ImageRotator).
+     */
     #[Route('/review/{id}/images', name: 'review_images', requirements: ['id' => '\d+'], methods: ['POST'])]
-    public function images(int $id, Request $request): JsonResponse
+    public function images(int $id, Request $request, ImageRotator $rotator): JsonResponse
     {
         $this->checkCsrf($request);
         $item = $this->find($id);
         $data = $this->payload($request);
         $order = array_map('intval', \is_array($data['order'] ?? null) ? $data['order'] : []);
         $delete = array_map('intval', \is_array($data['delete'] ?? null) ? $data['delete'] : []);
+        $rotate = \is_array($data['rotate'] ?? null) ? $data['rotate'] : [];
+        $error = null;
 
         foreach ($item->getImages()->toArray() as $image) {
             if (\in_array($image->getId(), $delete, true)) {
                 $item->removeImage($image);
                 continue;
             }
+            $degrees = $rotate[(int) $image->getId()] ?? null;
+            if (is_numeric($degrees)) {
+                try {
+                    $rotator->rotate($image, (int) $degrees);
+                } catch (\RuntimeException $e) {
+                    $error = 'Bild konnte nicht gedreht werden: '.$e->getMessage();
+                }
+            }
             $position = array_search($image->getId(), $order, true);
             if (false !== $position) {
                 $image->setPosition((int) $position);
             }
         }
+        // auch bei einem Fehler speichern: bereits gedrehte Bilder haben neue Dateien, die alten sind gelöscht
         $this->em->flush();
+        if (null !== $error) {
+            return $this->json(['error' => $error], 422);
+        }
         $this->em->refresh($item);
 
         return $this->json(['item' => $this->itemData($item)]);

@@ -134,6 +134,8 @@ export function createApi(base: string, csrf: string) {
     duplicate: (id: number, action: 'keep' | 'replace' | 'separate') => request<{ item?: ItemData; merged?: MergedInfo }>(`${base}/${id}/duplicate`, { action }),
     proposal: (id: number, uploadId: number, action: 'accept' | 'reject') => request<{ item: ItemData }>(`${base}/${id}/proposal/${uploadId}`, { action }),
     images: (id: number, order: number[], remove: number[]) => request<{ item: ItemData }>(`${base}/${id}/images`, { order, delete: remove }),
+    /** degrees im Uhrzeigersinn (90, 180, -90); erzeugt neue Bilddateien mit neuen Adressen */
+    rotateImage: (id: number, imageId: number, degrees: number) => request<{ item: ItemData }>(`${base}/${id}/images`, { rotate: { [imageId]: degrees } }),
     scan: () => request<{ imported: number; failed: Record<string, string> }>(`${root}/scan`, {}),
     createCategory: (nameDe: string, parentId: number | null) => request<{ id: number; label: string }>(`${root}/categories`, { nameDe, parentId }),
     createTopic: (nameDe: string) => request<{ id: number; name: string }>(`${root}/topics`, { nameDe }),

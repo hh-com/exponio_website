@@ -11,6 +11,7 @@ use App\Repository\UserRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 
 final class AdminTest extends WebTestCase
 {
@@ -203,6 +204,64 @@ final class AdminTest extends WebTestCase
         $data = json_decode((string) $this->client->getResponse()->getContent(), true);
         self::assertSame('/admin/settings/1/edit', $data['redirect']);
         self::assertSame('warning', $data['messages'][0]['type'], 'AI_PROVIDER=fake im Test');
+    }
+
+    public function testImagesCanBeRotatedInReviewAndItemForm(): void
+    {
+        $this->login();
+        $item = static::getContainer()->get(EntityManagerInterface::class)->getRepository(Item::class)->findOneBy([], ['id' => 'ASC']);
+        self::assertNotNull($item);
+        $itemId = (int) $item->getId();
+        $image = $item->getImages()->first();
+        self::assertNotFalse($image);
+        $imageId = (int) $image->getId();
+        [$path, $width, $height] = [(string) $image->getPath(), $image->getWidth(), $image->getHeight()];
+        self::assertNotSame($width, $height, 'Demo-Bilder sind nicht quadratisch');
+
+        // Prüfseite: sofort drehen
+        $crawler = $this->client->request('GET', '/admin/review');
+        $props = json_decode((string) $crawler->filter('#review-app')->attr('data-props'), true);
+        $headers = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_CSRF_TOKEN' => $props['csrf']];
+        $this->client->request('POST', $props['api'].'/'.$itemId.'/images', server: $headers, content: (string) json_encode(['rotate' => [$imageId => 90]]));
+        self::assertResponseIsSuccessful();
+        $images = json_decode((string) $this->client->getResponse()->getContent(), true)['item']['images'];
+        $rotated = array_values(array_filter($images, static fn (array $i): bool => $i['id'] === $imageId))[0] ?? null;
+        self::assertNotNull($rotated);
+        self::assertStringNotContainsString($path, $rotated['full'], 'gedrehtes Bild hat eine neue Adresse');
+        $image = $this->findImage($imageId);
+        self::assertSame([$height, $width], [$image->getWidth(), $image->getHeight()]);
+
+        // Objekt-Formular: Drehung im versteckten Feld, ausgeführt beim Speichern
+        $crawler = $this->client->request('GET', '/admin/item/'.$itemId.'/edit');
+        self::assertResponseIsSuccessful();
+        $preview = (string) $image->getPath().'-400.webp';
+        $entry = $crawler->filter('[data-image-entry]')->reduce(static fn (Crawler $e): bool => str_contains($e->html(), $preview));
+        self::assertCount(1, $entry, 'Bild mit Vorschau und Dreh-Knöpfen im Formular');
+        $field = (string) $entry->filter('input[data-image-rotate]')->attr('name');
+        self::assertCount(3, $entry->filter('button[data-rotate-step]'));
+        [$path, $width, $height] = [(string) $image->getPath(), $image->getWidth(), $image->getHeight()];
+
+        $form = $crawler->filter('form[name="Item"]')->form();
+        $form[$field] = '-90';
+        $this->client->submit($form);
+        self::assertResponseRedirects();
+        $image = $this->findImage($imageId);
+        self::assertNotSame($path, $image->getPath());
+        self::assertSame([$height, $width], [$image->getWidth(), $image->getHeight()]);
+        $mediaDir = static::getContainer()->getParameter('app.media_dir');
+        self::assertIsString($mediaDir);
+        self::assertFileDoesNotExist($mediaDir.'/'.$path.'-400.webp', 'alte Dateien gelöscht');
+        self::assertFileExists($mediaDir.'/'.$image->getPath().'-400.webp');
+    }
+
+    private function findImage(int $id): ItemImage
+    {
+        $em = static::getContainer()->get(EntityManagerInterface::class);
+        $em->clear();
+        $image = $em->find(ItemImage::class, $id);
+        self::assertNotNull($image);
+
+        return $image;
     }
 
     private function login(): void
