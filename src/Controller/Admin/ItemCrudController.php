@@ -266,7 +266,7 @@ class ItemCrudController extends AbstractCrudController
                 'token' => $this->csrf->getToken('recognize'.$item->getId())->getValue(),
             ])
             ->renderAsForm()
-            ->setHtmlAttributes(['data-ai-progress' => 'KI-Erkennung läuft'])
+            ->setHtmlAttributes(['data-ai-progress' => 'KI-Erkennung läuft', 'data-ai-result' => 'Ergebnis anzeigen'])
             ->displayIf(static fn (Item $item): bool => !$item->getImages()->isEmpty());
 
         $view = Action::new('viewOnSite', 'Ansehen', 'fa fa-arrow-up-right-from-square')

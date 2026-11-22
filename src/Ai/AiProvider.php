@@ -16,6 +16,7 @@ final class AiProvider
     public const GEMINI = 'gemini';
     public const ANTHROPIC = 'anthropic';
     public const MISTRAL = 'mistral';
+    public const OPENAI = 'openai';
     public const FAKE = 'fake';
 
     /** Auswahl im Backend: Bezeichnung => Anbieter */
@@ -23,6 +24,7 @@ final class AiProvider
         'Google Gemini' => self::GEMINI,
         'Anthropic Claude' => self::ANTHROPIC,
         'Mistral AI' => self::MISTRAL,
+        'OpenAI (ChatGPT)' => self::OPENAI,
     ];
 
     /** Höchstzahl Bilder pro Anfrage, falls der Anbieter eine hat (Mistral: laut Doku 8) */
@@ -42,7 +44,7 @@ final class AiProvider
         return self::FAKE === $this->normalize($this->envProvider);
     }
 
-    /** gemini | anthropic | mistral (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
+    /** gemini | anthropic | mistral | openai (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
     public function name(): string
     {
         return $this->resolve($this->settings->get()->getAiProvider());
@@ -71,6 +73,7 @@ final class AiProvider
             self::ANTHROPIC => 'Claude',
             self::GEMINI => 'Gemini',
             self::MISTRAL => 'Mistral',
+            self::OPENAI => 'OpenAI',
             default => $provider,
         };
     }

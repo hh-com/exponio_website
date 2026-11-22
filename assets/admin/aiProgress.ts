@@ -1,4 +1,4 @@
-import { toast, type ToastHandle, type ToastType } from '../lib/toast'
+import { toast, toastType, type ToastAction, type ToastHandle, type ToastType } from '../lib/toast'
 
 const POLL_MS = 1000
 const active = new Set<AiProgressToast>()
@@ -41,10 +41,10 @@ export class AiProgressToast {
     return this.id
   }
 
-  /** Abfragen beenden und den Toast in eine Ergebnis-Meldung verwandeln. */
-  finish(type: Exclude<ToastType, 'progress'>, message: string, title: string | null = null): void {
+  /** Abfragen beenden und den Toast in eine Ergebnis-Meldung verwandeln (optional mit Button). */
+  finish(type: Exclude<ToastType, 'progress'>, message: string, title: string | null = null, action: ToastAction | null = null): void {
     this.halt()
-    this.toast.update({ type, message, title })
+    this.toast.update({ type, message, title, action })
   }
 
   /** Abfragen beenden und den Toast schließen. */
@@ -86,9 +86,61 @@ export class AiProgressToast {
   }
 }
 
+const SEVERITY: Record<string, number> = { error: 3, warning: 2, success: 1, info: 0 }
+
+interface BackgroundResult {
+  redirect: string | null
+  messages: { type: string; message: string }[]
+}
+
 /**
- * Backend-Aktionen mit data-ai-progress="Titel" (z. B. „KI-Erkennung“, „Jetzt übersetzen“, „KI-Verbindung testen“):
- * Beim Absenden erscheint der Fortschritts-Toast; die Seite lädt danach mit der Ergebnis-Meldung neu.
+ * Schickt eine Backend-Aktion im Hintergrund ab (App\EventSubscriber\BackgroundActionSubscriber antwortet mit JSON
+ * statt Weiterleitung). Die Seite bleibt bedienbar; der Fortschritts-Toast wird zur Ergebnis-Meldung.
+ */
+async function runInBackground(form: HTMLFormElement, title: string, resultLabel: string | null): Promise<void> {
+  const progress = new AiProgressToast(title)
+  const buttons = Array.from(form.querySelectorAll('button'))
+  buttons.forEach((button) => { button.disabled = true })
+  try {
+    const body = new FormData(form)
+    body.set('_progress', progress.id)
+    const response = await fetch(form.action, {
+      method: 'POST',
+      body,
+      credentials: 'same-origin',
+      // Weiterleitungen nicht still folgen: Die Zielseite würde die Meldungen aus der Session verbrauchen
+      redirect: 'manual',
+      headers: { Accept: 'application/json', 'X-Background-Action': '1', 'X-Progress-Id': progress.id },
+    })
+    if (response.type === 'opaqueredirect') {
+      // Weiterleitung statt JSON (z. B. Server-Cache nach einem Update nicht geleert, oder Login abgelaufen):
+      // Die Aktion ist gelaufen, die Meldungen liegen noch in der Session – neu laden zeigt sie an.
+      progress.finish('info', 'Seite wird neu geladen …')
+      window.location.reload()
+      return
+    }
+    const data = (response.headers.get('Content-Type') ?? '').includes('json') ? await response.json() as BackgroundResult : null
+    if (!response.ok || !data) {
+      throw new Error(response.status === 403 ? 'Keine Berechtigung oder Sitzung abgelaufen – bitte die Seite neu laden.' : `Fehler ${response.status} – bitte die Seite neu laden und erneut versuchen.`)
+    }
+    // die wichtigste Meldung ersetzt den Fortschritt, weitere erscheinen darunter
+    const messages = [...data.messages].sort((a, b) => (SEVERITY[toastType(b.type)] ?? 0) - (SEVERITY[toastType(a.type)] ?? 0))
+    const [main, ...rest] = messages
+    const action = resultLabel && data.redirect ? { label: resultLabel, href: data.redirect } : null
+    const mainType = main ? toastType(main.type) : 'success'
+    progress.finish(mainType === 'progress' ? 'info' : mainType, main?.message ?? 'Fertig.', null, action)
+    rest.forEach((message) => toast(toastType(message.type), message.message))
+  } catch (e) {
+    progress.finish('error', (e as Error).message || 'Verbindung unterbrochen – bitte erneut versuchen.')
+  } finally {
+    buttons.forEach((button) => { button.disabled = false })
+  }
+}
+
+/**
+ * Backend-Aktionen mit data-ai-progress="Titel" (z. B. „KI-Erkennung“, „Jetzt übersetzen“, „KI-Verbindung testen“)
+ * laufen im Hintergrund mit Fortschritts-Toast. data-ai-result="Ergebnis anzeigen" fügt dem Ergebnis einen Button
+ * zur Seite mit dem Ergebnis hinzu (sonst bleibt man einfach, wo man ist).
  */
 export function initAiProgressForms(): void {
   document.addEventListener('submit', (event) => {
@@ -97,26 +149,7 @@ export function initAiProgressForms(): void {
     const trigger = event.submitter?.closest<HTMLElement>('[data-ai-progress]') ?? form.querySelector<HTMLElement>('[data-ai-progress]')
     const title = trigger?.dataset.aiProgress
     if (!title) return
-
-    const progress = new AiProgressToast(title)
-    let field = form.querySelector<HTMLInputElement>('input[name="_progress"]')
-    if (!field) {
-      field = document.createElement('input')
-      field.type = 'hidden'
-      field.name = '_progress'
-      form.append(field)
-    }
-    field.value = progress.id
-    // Doppelklick verhindern – erst nach dem Absenden, sonst fehlt der Button in den Formulardaten
-    window.setTimeout(() => form.querySelectorAll('button').forEach((button) => { button.disabled = true }))
-  })
-
-  // Zurück-Taste: Die Seite kommt evtl. aus dem Browser-Cache – alten Fortschritt entfernen, Buttons freigeben
-  window.addEventListener('pageshow', (event) => {
-    if (!event.persisted) return
-    active.forEach((progress) => progress.stop())
-    document.querySelectorAll<HTMLInputElement>('input[name="_progress"]').forEach((field) => {
-      field.form?.querySelectorAll('button').forEach((button) => { button.disabled = false })
-    })
+    event.preventDefault()
+    void runInBackground(form, title, trigger?.dataset.aiResult ?? null)
   })
 }

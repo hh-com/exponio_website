@@ -10,6 +10,7 @@ use App\Ai\AiProvider;
 use App\Ai\AiRetryStrategy;
 use App\Ai\AnthropicClient;
 use App\Ai\MistralClient;
+use App\Ai\OpenAiClient;
 use App\Ai\GeminiClient;
 use App\Ai\SecretBox;
 use App\Duplicate\ComparisonPromptBuilder;
@@ -228,6 +229,7 @@ final class AiTest extends TestCase
         $cases = [
             [new MockResponse('{"object":"error","message":"Invalid model: foo","type":"invalid_request_error"}', ['http_code' => 400]), 'Mistral-Fehler 400: Invalid model: foo'],
             [new MockResponse('{"detail":"Unauthorized"}', ['http_code' => 401]), 'Mistral-Fehler 401: Unauthorized'],
+            [new MockResponse('{"object":"error","message":"This model is not available in your subscription tier","type":"tier_not_allowed","code":"1910"}', ['http_code' => 403]), 'Das Modell m ist in deinem Mistral-Tarif nicht enthalten'],
             [new MockResponse('{"choices":[{"finish_reason":"length","message":{"content":"{\\"a\\":"}}]}'), 'abgeschnitten'],
         ];
         foreach ($cases as [$response, $expected]) {
@@ -252,6 +254,62 @@ final class AiTest extends TestCase
         (new MistralClient(new MockHttpClient(), $this->credentials(null)))->generateJson('m', [], []);
     }
 
+    public function testOpenAiRequestAndResponse(): void
+    {
+        $sent = [];
+        $http = new MockHttpClient(function (string $method, string $url, array $options) use (&$sent): MockResponse {
+            $sent = ['url' => $url, 'headers' => $options['headers'], 'body' => json_decode($options['body'], true)];
+
+            return new MockResponse((string) json_encode([
+                'object' => 'response',
+                'status' => 'completed',
+                'model' => 'gpt-6.2-sol-2026-11-17',
+                'output' => [
+                    ['type' => 'reasoning', 'content' => [], 'summary' => []],
+                    ['type' => 'message', 'role' => 'assistant', 'content' => [
+                        ['type' => 'output_text', 'text' => '{"title": "Bund 1955",'],
+                        ['type' => 'output_text', 'text' => ' "confidence": 0.9}'],
+                    ]],
+                ],
+            ]));
+        }, 'https://api.openai.com/v1/');
+
+        $schema = ['type' => 'object', 'additionalProperties' => false, 'required' => ['title'], 'properties' => ['title' => ['type' => 'string']]];
+        $result = (new OpenAiClient($http, $this->credentials(null, null, null, 'oa-key')))->generateJson('gpt-6.2-sol', [AiInput::text('Prompt'), AiInput::image('QUJD', 'image/webp')], $schema);
+
+        self::assertSame(['title' => 'Bund 1955', 'confidence' => 0.9], $result['data']);
+        self::assertSame('gpt-6.2-sol-2026-11-17', $result['model']);
+        self::assertSame('https://api.openai.com/v1/responses', $sent['url']);
+        self::assertContains('Authorization: Bearer oa-key', $sent['headers']);
+        self::assertSame('gpt-6.2-sol', $sent['body']['model']);
+        self::assertFalse($sent['body']['store'], 'keine Speicherung bei OpenAI');
+        self::assertSame(['type' => 'input_text', 'text' => 'Prompt'], $sent['body']['input'][0]['content'][0]);
+        self::assertSame(['type' => 'input_image', 'image_url' => 'data:image/webp;base64,QUJD', 'detail' => 'high'], $sent['body']['input'][0]['content'][1]);
+        self::assertSame(['type' => 'json_schema', 'name' => 'antwort', 'schema' => $schema, 'strict' => true], $sent['body']['text']['format']);
+    }
+
+    public function testOpenAiErrors(): void
+    {
+        $cases = [
+            [new MockResponse('{"error":{"message":"Incorrect API key provided","type":"invalid_request_error"}}', ['http_code' => 401]), 'OpenAI-Fehler 401: Incorrect API key provided'],
+            [new MockResponse('{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}'), 'abgeschnitten'],
+            [new MockResponse('{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}'), 'gefiltert'],
+            [new MockResponse('{"status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"Dabei kann ich nicht helfen."}]}]}'), 'abgelehnt: Dabei kann ich nicht helfen.'],
+        ];
+        foreach ($cases as [$response, $expected]) {
+            try {
+                (new OpenAiClient(new MockHttpClient($response), $this->credentials(null, null, null, 'k')))->generateJson('m', [AiInput::text('x')], ['type' => 'object']);
+                self::fail('Fehler erwartet: '.$expected);
+            } catch (AiException $e) {
+                self::assertStringContainsString($expected, $e->getMessage());
+            }
+        }
+
+        $this->expectException(AiException::class);
+        $this->expectExceptionMessage('Kein OpenAI-API-Key');
+        (new OpenAiClient(new MockHttpClient(), $this->credentials(null)))->generateJson('m', [], []);
+    }
+
     public function testComparisonImagesFitTheProviderLimit(): void
     {
         self::assertSame([4, 2], ComparisonPromptBuilder::imagePlan(3, null), 'ohne Grenze wie bisher');
@@ -270,6 +328,9 @@ final class AiTest extends TestCase
         self::assertNull((new AiProvider('fake', $settings))->maxImages(), 'Testmodus: keine Grenze');
         $settings->get()->setAiProvider(AiProvider::ANTHROPIC);
         self::assertNull((new AiProvider('gemini', $settings))->maxImages());
+        $settings->get()->setAiProvider(AiProvider::OPENAI);
+        self::assertNull((new AiProvider('gemini', $settings))->maxImages());
+        self::assertSame('OpenAI', AiProvider::shortLabel(AiProvider::OPENAI));
     }
 
     public function testProgressIsStoredPerRequestId(): void
@@ -333,14 +394,14 @@ final class AiTest extends TestCase
         self::assertFalse(PlaceholderGuard::isValid('Text', '   '));
     }
 
-    private function credentials(?string $geminiKey, ?string $anthropicKey = null, ?string $mistralKey = null): AiCredentials
+    private function credentials(?string $geminiKey, ?string $anthropicKey = null, ?string $mistralKey = null, ?string $openaiKey = null): AiCredentials
     {
-        return $this->creds($geminiKey, $anthropicKey, $this->settings(), new SecretBox('geheim'), $mistralKey);
+        return $this->creds($geminiKey, $anthropicKey, $this->settings(), new SecretBox('geheim'), $mistralKey, $openaiKey);
     }
 
-    private function creds(?string $geminiKey, ?string $anthropicKey, SettingsProvider $settings, SecretBox $box, ?string $mistralKey = null): AiCredentials
+    private function creds(?string $geminiKey, ?string $anthropicKey, SettingsProvider $settings, SecretBox $box, ?string $mistralKey = null, ?string $openaiKey = null): AiCredentials
     {
-        return new AiCredentials($geminiKey, $anthropicKey, $mistralKey, $settings, $box, new AiProvider('gemini', $settings));
+        return new AiCredentials($geminiKey, $anthropicKey, $mistralKey, $openaiKey, $settings, $box, new AiProvider('gemini', $settings));
     }
 
     private function settings(): SettingsProvider

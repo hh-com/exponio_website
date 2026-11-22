@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import SearchSelect from './SearchSelect.vue'
 import TopicPicker from './TopicPicker.vue'
 import { ApiError, createApi, type ItemData, type MergedInfo, type Meta, type QueueItem } from './api'
@@ -19,6 +19,9 @@ const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplic
 const batch = ref({ done: 0, total: 0 })
 const errors = ref<Record<string, string>>({})
 const activeImage = ref(0)
+const queueAside = ref<HTMLElement | null>(null)
+const queueList = ref<HTMLElement | null>(null)
+const editor = ref<HTMLElement | null>(null)
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: 'Unerkannt', cls: 'tw:bg-stone-200 tw:text-stone-700' },
@@ -35,6 +38,8 @@ const filtered = computed(() => queue.value.filter((q) => {
   return true
 }))
 const pending = computed(() => queue.value.filter((q) => !q.recognized && !q.error))
+/** Stelle des geöffneten Objekts in der (gefilterten) Liste, -1 wenn nicht enthalten */
+const position = computed(() => filtered.value.findIndex((q) => q.id === currentId.value))
 const area = computed(() => meta.value.areas.find((a) => a.id === form.value?.areaId) ?? null)
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== JSON.stringify(original.value))
 const confidence = computed(() => form.value?.ai.confidence ?? null)
@@ -104,6 +109,31 @@ async function select(id: number, force = false) {
     flash('danger', (e as Error).message)
   }
 }
+
+/** vorheriges/nächstes Objekt der Liste öffnen (Pfeilknöpfe, Alt+↑/↓) */
+function step(offset: number) {
+  const target = filtered.value[position.value + offset]
+  if (target) select(target.id)
+}
+
+/** Geöffnetes Objekt in der Liste sichtbar machen – nur die Liste scrollt (mobil waagrecht, sonst senkrecht), nicht die Seite */
+function revealActive() {
+  const entry = queueList.value?.querySelector<HTMLElement>('[aria-current="true"]')
+  if (!entry) return
+  const inner = entry.getBoundingClientRect()
+  for (const box of [queueList.value, queueAside.value]) {
+    if (!box) continue
+    const outer = box.getBoundingClientRect()
+    if (box.scrollWidth > box.clientWidth) box.scrollLeft += Math.min(0, inner.left - outer.left - 8) + Math.max(0, inner.right - outer.right + 8)
+    if (box.scrollHeight > box.clientHeight) box.scrollTop += Math.min(0, inner.top - outer.top - 8) + Math.max(0, inner.bottom - outer.bottom + 8)
+  }
+}
+watch([currentId, filter], revealActive, { flush: 'post' })
+
+// Nach dem Wechsel (z. B. „Freigeben & weiter“ ganz unten) beim neuen Objekt oben anfangen – bei den Fotos
+watch(() => form.value?.id, () => {
+  if (editor.value && editor.value.getBoundingClientRect().top < 0) editor.value.scrollIntoView({ block: 'start' })
+}, { flush: 'post' })
 
 function nextId(after: number): number | null {
   const list = filtered.value
@@ -306,10 +336,7 @@ function onKeydown(event: KeyboardEvent) {
   else if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); if (!busy.value) save('save') }
   else if (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && currentId.value !== null) {
     event.preventDefault()
-    const list = filtered.value
-    const index = list.findIndex((q) => q.id === currentId.value)
-    const target = list[index + (event.key === 'ArrowDown' ? 1 : -1)]
-    if (target) select(target.id)
+    step(event.key === 'ArrowDown' ? 1 : -1)
   }
 }
 function onBeforeUnload(event: BeforeUnloadEvent) {
@@ -367,16 +394,30 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
       <p class="tw:mt-1 tw:opacity-70">Keine Objekte zu prüfen. Neue Fotos mit der App hochladen und „Ordner scannen“ klicken.</p>
     </div>
 
-    <div v-else class="tw:grid tw:gap-5 tw:lg:grid-cols-[260px_minmax(0,1fr)]">
-      <!-- Warteschlange -->
-      <aside class="tw:lg:sticky tw:lg:top-4 tw:lg:max-h-[calc(100vh-2rem)] tw:lg:self-start tw:lg:overflow-y-auto">
-        <p class="tw:mb-2 tw:text-[12px] tw:font-semibold tw:tracking-wide tw:uppercase tw:opacity-60">{{ filtered.length }} Objekte</p>
-        <ul class="tw:m-0 tw:flex tw:list-none tw:gap-2 tw:overflow-x-auto tw:p-0 tw:pb-2 tw:lg:flex-col tw:lg:overflow-visible">
-          <li v-for="entry in filtered" :key="entry.id" class="tw:w-56 tw:shrink-0 tw:lg:w-auto">
+    <!-- grid-cols-1 = minmax(0, 1fr): sonst macht die waagrechte Objektliste die Seite mobil so breit wie alle Einträge zusammen -->
+    <div v-else class="tw:grid tw:grid-cols-1 tw:gap-5 tw:lg:grid-cols-[260px_minmax(0,1fr)]">
+      <!-- Warteschlange: mobil ein waagrechter Streifen, ab lg eine Spalte -->
+      <aside ref="queueAside" class="tw:min-w-0 tw:lg:sticky tw:lg:top-4 tw:lg:max-h-[calc(100vh-2rem)] tw:lg:self-start tw:lg:overflow-y-auto">
+        <div class="tw:mb-2 tw:flex tw:items-center tw:justify-between tw:gap-2">
+          <p class="tw:m-0 tw:text-[12px] tw:font-semibold tw:tracking-wide tw:uppercase tw:opacity-60">
+            {{ position >= 0 ? `Objekt ${position + 1} von ${filtered.length}` : `${filtered.length} Objekte` }}
+          </p>
+          <div class="tw:flex tw:gap-1 tw:lg:hidden">
+            <button type="button" class="btn btn-default btn-outline btn-sm" title="Vorheriges Objekt" aria-label="Vorheriges Objekt" :disabled="position <= 0" @click="step(-1)">
+              <i class="fa fa-chevron-left" />
+            </button>
+            <button type="button" class="btn btn-default btn-outline btn-sm" title="Nächstes Objekt" aria-label="Nächstes Objekt" :disabled="position >= filtered.length - 1" @click="step(1)">
+              <i class="fa fa-chevron-right" />
+            </button>
+          </div>
+        </div>
+        <ul ref="queueList" class="tw:m-0 tw:flex tw:snap-x tw:list-none tw:gap-2 tw:overflow-x-auto tw:overscroll-x-contain tw:p-0 tw:pb-2 tw:lg:flex-col tw:lg:overflow-visible">
+          <li v-for="entry in filtered" :key="entry.id" class="tw:w-56 tw:shrink-0 tw:snap-start tw:lg:w-auto">
             <button
               type="button"
               class="tw:flex tw:w-full tw:items-center tw:gap-3 tw:rounded-xl tw:border tw:p-2 tw:text-left tw:transition"
               :class="entry.id === currentId ? 'tw:border-brand-500 tw:bg-brand-50 tw:shadow-sm' : 'tw:border-line tw:bg-white tw:hover:border-brand-200'"
+              :aria-current="entry.id === currentId ? 'true' : undefined"
               @click="select(entry.id)"
             >
               <span class="tw:grid tw:size-12 tw:shrink-0 tw:place-items-center tw:overflow-hidden tw:rounded-lg tw:bg-soft">
@@ -384,13 +425,13 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
               </span>
               <span class="tw:min-w-0 tw:flex-1">
                 <span class="tw:block tw:truncate tw:font-medium">#{{ entry.id }} {{ entry.title }}</span>
-                <span class="tw:mt-1 tw:flex tw:items-center tw:gap-1.5">
+                <span class="tw:mt-1 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5 tw:whitespace-nowrap">
                   <span class="tw:rounded-full tw:px-1.5 tw:py-px tw:text-[11px] tw:font-semibold" :class="entry.error ? 'tw:bg-red-100 tw:text-red-700' : STATUS[entry.status]?.cls">
                     {{ entry.error ? 'Fehler' : STATUS[entry.status]?.label }}
                   </span>
                   <span v-if="entry.duplicateOf" class="tw:rounded-full tw:bg-violet-100 tw:px-1.5 tw:py-px tw:text-[11px] tw:font-semibold tw:text-violet-800">Duplikat?</span>
                   <span v-if="entry.proposal" class="tw:rounded-full tw:bg-sky-100 tw:px-1.5 tw:py-px tw:text-[11px] tw:font-semibold tw:text-sky-800">Neue Fotos</span>
-                  <span v-if="entry.confidence !== null" class="tw:h-1.5 tw:flex-1 tw:overflow-hidden tw:rounded-full tw:bg-stone-200">
+                  <span v-if="entry.confidence !== null" class="tw:h-1.5 tw:min-w-8 tw:flex-1 tw:overflow-hidden tw:rounded-full tw:bg-stone-200">
                     <span class="tw:block tw:h-full" :class="confidenceColor(entry.confidence)" :style="{ width: pct(entry.confidence).replace(' ', '') }" />
                   </span>
                 </span>
@@ -401,10 +442,10 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
       </aside>
 
       <!-- Editor -->
-      <section v-if="form" class="tw:min-w-0">
+      <section v-if="form" ref="editor" class="tw:min-w-0 tw:scroll-mt-4">
         <div class="tw:mb-4 tw:flex tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
           <div class="tw:min-w-0">
-            <h2 class="tw:m-0 tw:truncate tw:text-xl tw:font-semibold">#{{ form.id }} {{ form.title }}</h2>
+            <h2 class="tw:m-0 tw:text-xl tw:font-semibold tw:wrap-break-word">#{{ form.id }} {{ form.title }}</h2>
             <p class="tw:m-0 tw:mt-1 tw:text-[13px] tw:opacity-70">
               <span class="tw:rounded-full tw:px-2 tw:py-0.5 tw:text-[11px] tw:font-semibold" :class="STATUS[form.status]?.cls">{{ STATUS[form.status]?.label }}</span>
               <template v-if="form.sourceFolder"> · Ordner {{ form.sourceFolder }}</template>
@@ -439,13 +480,14 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
               <p v-if="form.duplicate.reason" class="tw:m-0 tw:mt-2 tw:whitespace-pre-line">{{ form.duplicate.reason }}</p>
               <p v-if="form.duplicate.better" class="tw:m-0 tw:mt-2 tw:font-medium">Die KI hält diesen Upload für besser (Erhaltung zuerst, dann Fotoqualität).</p>
             </div>
-            <div class="tw:flex tw:gap-2">
+            <div class="tw:flex tw:flex-wrap tw:gap-2">
               <a v-for="(image, i) in form.duplicate.images.slice(0, 3)" :key="image.id" :href="image.full" target="_blank" class="tw:grid tw:size-20 tw:place-items-center tw:overflow-hidden tw:rounded-xl tw:bg-white">
                 <img :src="image.thumb" :alt="`Foto ${i + 1} von #${form.duplicate.id}`" class="tw:size-full tw:object-contain tw:p-1">
               </a>
             </div>
           </div>
-          <div class="tw:mt-3 tw:flex tw:flex-wrap tw:gap-2">
+          <!-- mobil untereinander in voller Breite, lange Beschriftungen dürfen umbrechen -->
+          <div class="tw:mt-3 tw:flex tw:flex-wrap tw:gap-2 tw:max-sm:*:w-full tw:max-sm:*:whitespace-normal">
             <button type="button" class="btn btn-primary btn-solid" :disabled="!!busy" @click="decideDuplicate('keep')">
               <i class="fa fa-object-group" /> Als Duplikat zusammenführen – Bilder behalten
             </button>
@@ -475,13 +517,13 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
               </p>
               <p v-if="proposal.reason" class="tw:m-0 tw:mt-2 tw:whitespace-pre-line">{{ proposal.reason }}</p>
             </div>
-            <div class="tw:flex tw:gap-2">
+            <div class="tw:flex tw:flex-wrap tw:gap-2">
               <a v-for="(image, i) in proposal.images.slice(0, 4)" :key="image.id" :href="image.full" target="_blank" class="tw:grid tw:size-20 tw:place-items-center tw:overflow-hidden tw:rounded-xl tw:bg-white">
                 <img :src="image.thumb" :alt="`Vorgeschlagenes Foto ${i + 1}`" class="tw:size-full tw:object-contain tw:p-1">
               </a>
             </div>
           </div>
-          <div class="tw:mt-3 tw:flex tw:flex-wrap tw:gap-2">
+          <div class="tw:mt-3 tw:flex tw:flex-wrap tw:gap-2 tw:max-sm:*:w-full tw:max-sm:*:whitespace-normal">
             <button type="button" class="btn btn-success btn-solid" :disabled="!!busy" @click="decideProposal(proposal.id, 'accept')">
               <i class="fa fa-check" /> Bilder ersetzen
             </button>
@@ -677,13 +719,16 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
 
             <!-- Aktionen -->
             <div class="tw:sticky tw:bottom-0 tw:z-20 tw:-mx-1 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:border-t tw:border-line tw:bg-paper/95 tw:px-1 tw:py-3 tw:backdrop-blur">
-              <button type="button" class="btn btn-danger btn-ghost" :disabled="!!busy" @click="save('archive')"><i class="fa fa-box-archive" /> Archivieren</button>
-              <span class="tw:ml-auto tw:text-[12px] tw:opacity-60 tw:max-sm:hidden">Strg+S speichern · Strg+Enter freigeben · Alt+↑/↓ wechseln</span>
-              <button type="submit" class="btn btn-default btn-outline" :disabled="!!busy">
+              <!-- mobil kompakt, damit alles in eine Zeile passt -->
+              <button type="button" class="btn btn-danger btn-ghost" title="Archivieren" :disabled="!!busy" @click="save('archive')">
+                <i class="fa fa-box-archive" /> <span class="tw:max-sm:sr-only">Archivieren</span>
+              </button>
+              <span class="tw:ml-auto tw:text-[12px] tw:opacity-60 tw:max-lg:hidden">Strg+S speichern · Strg+Enter freigeben · Alt+↑/↓ wechseln</span>
+              <button type="submit" class="btn btn-default btn-outline tw:max-lg:ml-auto" :disabled="!!busy">
                 <i class="fa fa-floppy-disk" /> Speichern<template v-if="dirty"> •</template>
               </button>
               <button type="button" class="btn btn-success btn-solid" :disabled="!!busy" @click="save('publish')">
-                <i class="fa fa-check" /> Freigeben & weiter
+                <i class="fa fa-check" /> <span>Freigeben<span class="tw:max-sm:hidden"> & weiter</span></span>
               </button>
             </div>
           </form>

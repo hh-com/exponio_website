@@ -59,7 +59,7 @@ class LanguageCrudController extends AbstractCrudController
                 'token' => $this->csrf->getToken('translate'.$l->getCode())->getValue(),
             ])
             ->renderAsForm()
-            ->setHtmlAttributes(['data-ai-progress' => 'Übersetzung läuft'])
+            ->setHtmlAttributes(['data-ai-progress' => 'Übersetzung läuft', 'data-ai-result' => 'Liste aktualisieren'])
             ->displayIf(static fn (Language $l): bool => $l->isActive() && !$l->isSource());
 
         return $actions

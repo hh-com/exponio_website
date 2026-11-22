@@ -139,6 +139,10 @@ class Settings implements TranslatableInterface
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $mistralApiKey = null;
 
+    /** OpenAI-API-Key, verschlüsselt (App\Ai\SecretBox) */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $openaiApiKey = null;
+
     /** Dürfen KI-Crawler (GPTBot, ClaudeBot, …) die Seite lesen? */
     #[ORM\Column]
     private bool $allowAiCrawlers = true;
@@ -482,6 +486,7 @@ class Settings implements TranslatableInterface
         return match ($provider) {
             'anthropic' => $this->anthropicApiKey,
             'mistral' => $this->mistralApiKey,
+            'openai' => $this->openaiApiKey,
             default => $this->geminiApiKey,
         };
     }
@@ -491,6 +496,7 @@ class Settings implements TranslatableInterface
         match ($provider) {
             'anthropic' => $this->anthropicApiKey = $encrypted,
             'mistral' => $this->mistralApiKey = $encrypted,
+            'openai' => $this->openaiApiKey = $encrypted,
             default => $this->geminiApiKey = $encrypted,
         };
 

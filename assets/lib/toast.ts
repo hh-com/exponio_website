@@ -15,10 +15,17 @@ import '../styles/toast.css'
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error' | 'progress'
 
+export interface ToastAction {
+  label: string
+  href: string
+}
+
 export interface ToastOptions {
   title?: string | null
-  /** Anzeigedauer in ms; 0 = bis zum Schließen. Standard: Info/Erfolg 5 s, Warnung 8 s, Fehler/„läuft“ dauerhaft */
+  /** Anzeigedauer in ms; 0 = bis zum Schließen. Standard: Info/Erfolg 5 s, Warnung 8 s, Fehler/„läuft“ und mit Button dauerhaft */
   duration?: number
+  /** Link-Button unter dem Text, z. B. „Ergebnis anzeigen“ */
+  action?: ToastAction | null
 }
 
 export interface ToastChanges extends ToastOptions {
@@ -64,6 +71,7 @@ export function toast(type: ToastType, message: string, options: ToastOptions = 
   const title = document.createElement('strong')
   const text = document.createElement('p')
   const meta = document.createElement('p')
+  const link = document.createElement('a')
   const close = document.createElement('button')
 
   icon.className = 'ps-toast__icon'
@@ -72,17 +80,18 @@ export function toast(type: ToastType, message: string, options: ToastOptions = 
   title.className = 'ps-toast__title'
   text.className = 'ps-toast__message'
   meta.className = 'ps-toast__meta'
+  link.className = 'ps-toast__action'
   close.type = 'button'
   close.className = 'ps-toast__close'
   close.setAttribute('aria-label', 'Meldung schließen')
   close.innerHTML = '<i class="fa fa-xmark" aria-hidden="true"></i>'
-  body.append(title, text, meta)
+  body.append(title, text, meta, link)
   el.append(icon, body, close)
 
   let current: ToastType = type
   let hideTimer = 0
   let tick = 0
-  let duration = options.duration ?? DURATION[type]
+  let duration = options.duration ?? (options.action ? 0 : DURATION[type])
   const started = Date.now()
   let closed = false
 
@@ -96,6 +105,11 @@ export function toast(type: ToastType, message: string, options: ToastOptions = 
     if (changes.message !== undefined) text.textContent = changes.message
     if (changes.title !== undefined) title.textContent = changes.title ?? ''
     title.hidden = !title.textContent
+    if (changes.action !== undefined) {
+      link.textContent = changes.action?.label ?? ''
+      link.href = changes.action?.href ?? '#'
+    }
+    link.hidden = !link.textContent
     el.className = `ps-toast ps-toast--${current}${el.classList.contains('is-visible') ? ' is-visible' : ''}`
     // Fehler sofort vorlesen, alles andere höflich
     el.setAttribute('role', current === 'error' ? 'alert' : 'status')
@@ -115,7 +129,7 @@ export function toast(type: ToastType, message: string, options: ToastOptions = 
       if (closed) return
       render(changes)
       if (changes.type || changes.duration !== undefined) {
-        duration = changes.duration ?? DURATION[current]
+        duration = changes.duration ?? (link.hidden ? DURATION[current] : 0)
         schedule()
       }
     },
@@ -131,7 +145,7 @@ export function toast(type: ToastType, message: string, options: ToastOptions = 
     },
   }
 
-  render({ type, message, title: options.title ?? null })
+  render({ type, message, title: options.title ?? null, action: options.action ?? null })
   close.addEventListener('click', handle.close)
   el.addEventListener('mouseenter', () => window.clearTimeout(hideTimer))
   el.addEventListener('mouseleave', schedule)

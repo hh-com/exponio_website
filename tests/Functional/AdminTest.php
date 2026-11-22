@@ -189,6 +189,22 @@ final class AdminTest extends WebTestCase
         self::assertStringContainsString('Objekte mehrfach hochgeladen', (string) $this->client->getResponse()->getContent());
     }
 
+    public function testBackgroundActionAnswersWithJson(): void
+    {
+        $this->login();
+        $crawler = $this->client->request('GET', '/admin/settings/1/edit');
+        $form = $crawler->filter('form[action*="/admin/settings/test-ai"]');
+        self::assertCount(1, $form, 'Formular „KI-Verbindung testen“');
+
+        $this->client->request('POST', (string) $form->attr('action'), [], [], ['HTTP_ACCEPT' => 'application/json', 'HTTP_X_BACKGROUND_ACTION' => '1']);
+
+        self::assertResponseIsSuccessful();
+        self::assertResponseHeaderSame('Content-Type', 'application/json');
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertSame('/admin/settings/1/edit', $data['redirect']);
+        self::assertSame('warning', $data['messages'][0]['type'], 'AI_PROVIDER=fake im Test');
+    }
+
     private function login(): void
     {
         $user = static::getContainer()->get(UserRepository::class)->findOneBy(['email' => 'admin@example.com']);

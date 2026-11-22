@@ -242,14 +242,15 @@ sowie eine Übersicht auf dem Dashboard.
 
 ---
 
-## 7. KI (Google Gemini, Anthropic Claude oder Mistral AI)
+## 7. KI (Google Gemini, Anthropic Claude, Mistral AI oder OpenAI)
 
 - **Anbieter:** Backend → *Einstellungen* → Tab **KI** → „Anbieter“. Er gilt für alle Aufgaben (Erkennung,
   Duplikat-Vergleich, Übersetzung). Ohne Auswahl gilt `AI_PROVIDER` aus `.env`. Beim Wechsel werden die
   Modellnamen zurückgesetzt, weil sie nur für den bisherigen Anbieter gelten.
 - **Key:** Im selben Tab → „Neuer API-Key“; er wird für den gewählten Anbieter gespeichert (je Anbieter ein eigener
   Key). Der Key wird mit libsodium verschlüsselt gespeichert (Schlüssel aus `APP_SECRET`) und nie wieder angezeigt.
-  Steht `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` in `.env.local`, hat dieser Vorrang. „KI-Verbindung testen“
+  Steht `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY` bzw. `OPENAI_API_KEY` in `.env.local`, hat dieser
+  Vorrang. „KI-Verbindung testen“
   prüft Key und Modell des aktiven Anbieters.
 - **Schnittstelle Gemini:** Gemini Interactions API (seit Juni 2026 Googles Standard), Antwort als JSON nach festem
   Schema, Bilder als Base64, `store: false`.
@@ -258,6 +259,8 @@ sowie eine Übersicht auf dem Dashboard.
 - **Schnittstelle Mistral:** Chat Completions API, Antwort als JSON nach Schema (`json_schema`, `strict`), Bilder
   als Data-URI. Mistral nimmt höchstens 8 Bilder pro Anfrage: Die Erkennung schickt ohnehin höchstens 4, der
   Duplikat-Vergleich verteilt die Fotos dann auf neues Objekt und Kandidaten (bei 3 Kandidaten 2 + 3 × 2).
+- **Schnittstelle OpenAI (ChatGPT):** Responses API, Antwort als JSON nach Schema (`text.format`, `json_schema`,
+  `strict`), Bilder als Data-URI mit `detail: high`, `store: false`.
 - **Überlastung:** Bei 429/5xx (Claude auch 529) wiederholt die Website eine Anfrage bis zu dreimal (nach 2, 4 und
   8 s, oder so lange, wie der Anbieter per `Retry-After` verlangt), siehe `App\Ai\AiRetryStrategy`.
 - **Wartestatus im Backend:** Löst du im Backend eine KI-Aufgabe aus („KI-Erkennung“, „Jetzt übersetzen“,
@@ -266,16 +269,22 @@ sowie eine Übersicht auf dem Dashboard.
   „Claude ist überlastet (Fehler 529) – Versuch 2 folgt gleich …“, „Duplikatprüfung …“, „Anfrage 2 von max. 5“).
   Technik: Der Browser schickt eine zufällige ID mit (`X-Progress-Id` bzw. Feld `_progress`), die Dienste melden
   ihre Schritte an `App\Ai\AiProgress` (Cache-Pool `ai_progress.cache`), der Hinweis fragt `/admin/ai-progress`
-  jede Sekunde ab. Neue Aktionen bekommen den Hinweis mit `->setHtmlAttributes(['data-ai-progress' => 'Titel'])`.
+  jede Sekunde ab. Die Aktionen laufen im Hintergrund (fetch): Die Seite bleibt bedienbar, am Ende wird der Hinweis
+  zur Ergebnis-Meldung, bei Erkennung und Übersetzung mit Button „Ergebnis anzeigen“ bzw. „Liste aktualisieren“.
+  Statt der Weiterleitung antwortet der Server dann mit JSON (`App\EventSubscriber\BackgroundActionSubscriber`).
+  Neue Aktionen bekommen das mit `->setHtmlAttributes(['data-ai-progress' => 'Titel'])`, optional
+  `'data-ai-result' => 'Button-Text'`.
 - **Hinweise (Toasts):** `assets/lib/toast.ts` blendet Meldungen unten rechts ein und aus – Info, Erfolg, Warnung,
   Fehler und „läuft“. Auch alle `addFlash()`-Meldungen des Backends erscheinen so
   (`templates/bundles/EasyAdminBundle/flash_messages.html.twig`). Fehler bleiben bis zum Schließen stehen.
 - **Modelle:** Gemini: Standard `gemini-3.8-flash` (Erkennung) und `gemini-3.5-flash-lite` (Übersetzung). Claude:
   Standard `claude-sonnet-5-5` (Erkennung) und `claude-haiku-5-5` (Übersetzung). Mistral: Standard
-  `mistral-large-latest` (Erkennung, braucht Bildeingabe) und `mistral-small-latest` (Übersetzung). Alle änderbar im
-  Backend bzw. in `.env` (`GEMINI_MODEL`, `GEMINI_TRANSLATION_MODEL`, `ANTHROPIC_MODEL`, `ANTHROPIC_TRANSLATION_MODEL`,
-  `MISTRAL_MODEL`, `MISTRAL_TRANSLATION_MODEL`). Aktuelle Listen: <https://ai.google.dev/gemini-api/docs/models>,
-  <https://docs.claude.com/en/docs/about-claude/models>, <https://docs.mistral.ai/models>.
+  `mistral-large-latest` (Erkennung, braucht Bildeingabe) und `mistral-small-latest` (Übersetzung). OpenAI: Standard
+  `gpt-6.2-sol` (Erkennung) und `gpt-6-luna` (Übersetzung). Alle änderbar im Backend bzw. in `.env` (`GEMINI_MODEL`,
+  `GEMINI_TRANSLATION_MODEL`, `ANTHROPIC_MODEL`, `ANTHROPIC_TRANSLATION_MODEL`, `MISTRAL_MODEL`,
+  `MISTRAL_TRANSLATION_MODEL`, `OPENAI_MODEL`, `OPENAI_TRANSLATION_MODEL`). Aktuelle Listen:
+  <https://ai.google.dev/gemini-api/docs/models>, <https://docs.claude.com/en/docs/about-claude/models>,
+  <https://docs.mistral.ai/models>, <https://developers.openai.com/api/docs/models>.
 - **Prompts:** Alle drei Prompts sind im Backend editierbar: Erkennung, Übersetzung und Duplikat-Vergleich.
   Platzhalter `{{objektarten}}`, `{{laender}}`, `{{themen}}` und `{{sprache}}` füllt die Website. Das Antwortformat
   (JSON-Schema) bleibt im Code. Vorschauen zeigen den fertigen Erkennungs-Prompt und den Vergleichsauftrag für das
@@ -285,8 +294,8 @@ sowie eine Übersicht auf dem Dashboard.
   gibt es dort den Schalter „Veröffentlichte Objekte automatisch aktualisieren“ (Standard aus: nur vorschlagen). Der
   Vergleich nutzt das Modell der Erkennung und kostet einen zusätzlichen Aufruf, aber nur, wenn die Vorauswahl
   Kandidaten findet.
-- **Datenschutz:** Nur Objektfotos und Website-Texte gehen an den gewählten Anbieter, keine Besucherdaten. Für Claude
-  und Mistral gelten deren API-Bedingungen; prüfe sie vor dem Wechsel. Laut den Gemini-Bedingungen
+- **Datenschutz:** Nur Objektfotos und Website-Texte gehen an den gewählten Anbieter, keine Besucherdaten. Für Claude,
+  Mistral und OpenAI gelten deren API-Bedingungen; prüfe sie vor dem Wechsel. Laut den Gemini-Bedingungen
   (Stand 23.03.2026) gelten für Nutzer im EWR, in der Schweiz und in Großbritannien die Datenregeln der bezahlten
   Dienste. Das heißt: keine Nutzung zum Training. Empfohlen ist trotzdem ein Projekt mit Abrechnungskonto.
   Bedingungen: <https://ai.google.dev/gemini-api/terms>
@@ -373,7 +382,7 @@ es entstehen keine API-Kosten. Für die Browser-Tests einmalig `npx playwright i
 ```
 assets/                            Frontend (Vue-Islands, Tailwind) und Backend-Prüf-App
 src/
-  Ai/                              AiProvider, AiClients, GeminiClient, AnthropicClient, MistralClient, AiCredentials, AiProgress, AiRetryStrategy, SecretBox, AiConfig, DefaultPrompts
+  Ai/                              AiProvider, AiClients, GeminiClient, AnthropicClient, MistralClient, OpenAiClient, AiCredentials, AiProgress, AiRetryStrategy, SecretBox, AiConfig, DefaultPrompts
   Recognition/                     PromptBuilder, AiRecognizer, FakeRecognizer, RecognitionApplier
   Duplicate/                       CandidateFinder, ComparisonPromptBuilder, AiComparer, FakeComparer, DuplicateDetector, DuplicateMerger
   Translation/                     TranslationRunner, MachineTranslator, PlaceholderGuard, TranslatableTrait

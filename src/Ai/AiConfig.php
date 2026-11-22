@@ -26,6 +26,10 @@ final class AiConfig
         private readonly string $mistralModel,
         #[Autowire('%env(MISTRAL_TRANSLATION_MODEL)%')]
         private readonly string $mistralTranslationModel,
+        #[Autowire('%env(OPENAI_MODEL)%')]
+        private readonly string $openaiModel,
+        #[Autowire('%env(OPENAI_TRANSLATION_MODEL)%')]
+        private readonly string $openaiTranslationModel,
     ) {
     }
 
@@ -59,6 +63,7 @@ final class AiConfig
         return match ($this->provider->name()) {
             AiProvider::ANTHROPIC => $this->anthropicModel,
             AiProvider::MISTRAL => $this->mistralModel,
+            AiProvider::OPENAI => $this->openaiModel,
             default => $this->geminiModel,
         };
     }
@@ -68,6 +73,7 @@ final class AiConfig
         return match ($this->provider->name()) {
             AiProvider::ANTHROPIC => $this->anthropicTranslationModel,
             AiProvider::MISTRAL => $this->mistralTranslationModel,
+            AiProvider::OPENAI => $this->openaiTranslationModel,
             default => $this->geminiTranslationModel,
         };
     }

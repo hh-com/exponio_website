@@ -85,6 +85,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ps-toast__action {
+  display: inline-block;
+  margin-top: 0.4rem;
+  font-weight: 600;
+  color: var(--ps-toast-accent);
+  text-decoration: none;
+}
+.ps-toast__action:hover,
+.ps-toast__action:focus-visible {
+  text-decoration: underline;
+}
+.ps-toast__action[hidden] {
+  display: none;
+}
+
 .ps-toast__close {
   flex: none;
   display: grid;
@@ -103,6 +118,22 @@
 .ps-toast__close:focus-visible {
   background: color-mix(in srgb, currentColor 12%, transparent);
   color: var(--text-color, #1f2937);
+}
+
+/* Handy: oben statt unten – unten liegen Aktionsleisten (z. B. „Speichern / Freigeben“ auf der Prüfseite) */
+@media (max-width: 575.98px) {
+  .ps-toasts {
+    top: 0.5rem;
+    right: 0.5rem;
+    bottom: auto;
+    left: 0.5rem;
+    width: auto;
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .ps-toast {
+    transform: translateY(-0.5rem);
+  }
 }
 
 @keyframes ps-toast-spin {

@@ -62,6 +62,10 @@ final class MistralClient implements AiClientInterface
             throw new AiException('Mistral nicht erreichbar: '.$e->getMessage(), 0, $e);
         }
 
+        if (403 === $status && ('tier_not_allowed' === ($body['type'] ?? null) || str_contains(self::errorMessage($body), 'subscription tier'))) {
+            throw new AiException(sprintf('Das Modell %s ist in deinem Mistral-Tarif nicht enthalten (der kostenlose Tarif „Experiment“ sperrt u. a. die großen Modelle). '
+                .'In der Mistral-Konsole auf „Scale“ umstellen oder unter Einstellungen → KI ein anderes Modell eintragen.', $model));
+        }
         if ($status >= 400) {
             throw new AiException(sprintf('Mistral-Fehler %d: %s', $status, self::errorMessage($body)));
         }
