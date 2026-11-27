@@ -153,10 +153,14 @@ Das Zip per SFTP/FTPS in `live/` hochladen und dort entpacken (`unzip -o live-�
 ### Update einspielen
 
 ```bash
+php bin/console cache:clear      # zuerst! leert auch den Seiten-Cache (neue Inhaltsversion)
 php bin/console doctrine:migrations:migrate --no-interaction
 php bin/console app:setup
-php bin/console cache:clear      # leert auch den Seiten-Cache (neue Inhaltsversion)
 ```
+
+`cache:clear` muss vor den anderen Befehlen laufen: In `var/cache/prod` liegen noch Container und Doctrine-Mapping
+der alten Version. Fehlt dort ein inzwischen entferntes Feld, bricht `app:setup` sonst mit „Property … does not
+exist“ ab.
 
 Ohne Paket geht es auch direkt auf dem Server: `php composer.phar install --no-dev --optimize-autoloader
 --classmap-authoritative` (die Assets in `public/build/` müssen trotzdem lokal mit `npm run build` gebaut werden).

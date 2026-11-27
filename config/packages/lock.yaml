@@ -5,4 +5,7 @@ framework:
             # Import (app:scan, „Ordner scannen“, Sofortimport nach einem Upload der App, App\Import\FolderImporter):
             # Webserver und Cronjob müssen dieselbe Sperre sehen. /tmp taugt dafür nicht, Apache und PHP-FPM haben unter
             # systemd oft ein eigenes (PrivateTmp). Der Ordner entsteht von selbst.
-            import: 'flock://%kernel.project_dir%/var/lock'
+            # Über eine Umgebungsvariable, damit der Pfad erst zur Laufzeit feststeht: Direkt eingetragen landet er
+            # als fester Pfad im Cache. Auf Plesk sieht die SSH-Shell das Projekt unter /httpdocs/…, der Webserver
+            # unter /var/www/vhosts/…/httpdocs/… – ein per SSH gebauter Cache bräche dann im Browser (open_basedir).
+            import: '%env(resolve:LOCK_IMPORT_DSN)%'
