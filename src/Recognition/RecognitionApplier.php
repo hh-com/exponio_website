@@ -42,16 +42,19 @@ final class RecognitionApplier
     }
 
     /**
+     * $manual: Vorschlag eines anderen Modells unter „Prüfen & freigeben“ übernommen. Dann bleibt der Status
+     * (ein Entwurf wird „zu prüfen“), es wird nie automatisch veröffentlicht.
+     *
      * @param array<string, mixed> $data
      * @param list<CollectionArea> $areas
      */
-    public function apply(Item $item, array $data, string $model, array $areas): void
+    public function apply(Item $item, array $data, string $model, array $areas, bool $manual = false, ?\DateTimeImmutable $recognizedAt = null): void
     {
         $confidence = is_numeric($data['confidence'] ?? null) ? max(0.0, min(1.0, (float) $data['confidence'])) : null;
         $item->setAiResult($data)
             ->setAiModel(mb_substr($model, 0, 80))
             ->setAiConfidence($confidence)
-            ->setRecognizedAt(new \DateTimeImmutable())
+            ->setRecognizedAt($recognizedAt ?? new \DateTimeImmutable())
             ->setAiError(null);
 
         foreach ($areas as $area) {
@@ -95,6 +98,13 @@ final class RecognitionApplier
         $value = $data['catalog_value_eur'] ?? null;
         $item->setCatalogValue(is_numeric($value) && $value >= 0 ? (float) $value : null);
 
+        if ($manual) {
+            if (ItemStatus::Draft === $item->getStatus()) {
+                $item->setStatus(ItemStatus::Review);
+            }
+
+            return;
+        }
         $settings = $this->settings->get();
         $publish = $settings->isAutoPublish()
             && true === ($data['is_collectible'] ?? false)

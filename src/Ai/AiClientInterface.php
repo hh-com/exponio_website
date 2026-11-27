@@ -8,10 +8,12 @@ namespace App\Ai;
 interface AiClientInterface
 {
     /**
+     * usage: verbrauchte Tokens laut Antwort, Ausgabe einschließlich Denk-Tokens (null = nicht gemeldet).
+     *
      * @param list<array<string, string>> $input
      * @param array<string, mixed>        $schema
      *
-     * @return array{data: array<string, mixed>, model: string}
+     * @return array{data: array<string, mixed>, model: string, usage: array{input: int|null, output: int|null}}
      *
      * @throws AiException
      */

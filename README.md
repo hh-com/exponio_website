@@ -23,7 +23,7 @@ Danach übersetzt Gemini alles in die Sprachen, die du freischaltest.
 | Detailseite | Galerie mit Lupe, Seitenangabe (Vorder-/Rückseite/Detail), alle Merkmale, **Mängel**, ähnliche Stücke. Der **Schätzwert** erscheint nur, wenn er beim Objekt freigegeben ist |
 | Sprachen | Seite „Sprachen“, `hreflang`, Schrift von rechts nach links (Arabisch, Hebräisch …), Formate nach Sprache |
 | SEO / GEO | Titel und Beschreibung je Seite, JSON-LD (WebSite, Person, ItemPage, CollectionPage, BreadcrumbList), Sitemap je Sprache mit Bildern, `robots.txt`, `llms.txt` – alles automatisch |
-| Backend | **Prüfen & freigeben**, Objekte (Textsuche + Filter), Objektarten mit Merkmalen, Länder & Gebiete, Themen, Nachrichten, Seiten, **Sprachen**, **Oberflächentexte**, **Einstellungen** (inkl. Name und Logo der Website, KI: Key, Modelle, Prompts) |
+| Backend | **Prüfen & freigeben**, Objekte (Textsuche + Filter), Objektarten mit Merkmalen, Länder & Gebiete, Themen, Nachrichten, Seiten, **Sprachen**, **Oberflächentexte**, **Einstellungen** (inkl. Name und Logo der Website, KI: mehrere Modelle zum Vergleichen, Keys je Anbieter, Prompts) |
 | Import | Ein Upload-Ordner der App = ein Objekt. Der Upload-Ordner wird nur gelesen, die Originale bleiben unverändert. Nur **Löschen** unter *Prüfen & freigeben* entfernt ihn zusammen mit dem Objekt |
 | Duplikate | Lädst du ein Objekt noch einmal hoch, wird der Upload dem vorhandenen Objekt zugeordnet und gezählt. Bessere Fotos ersetzen die alten (rückgängig machbar), unsichere Fälle entscheidest du unter **Prüfen & freigeben** |
 
@@ -318,14 +318,25 @@ sowie eine Übersicht auf dem Dashboard.
 
 ## 7. KI (Google Gemini, Anthropic Claude, Mistral AI oder OpenAI)
 
-- **Anbieter:** Backend → *Einstellungen* → Tab **KI** → „Anbieter“. Er gilt für alle Aufgaben (Erkennung,
-  Duplikat-Vergleich, Übersetzung). Ohne Auswahl gilt `AI_PROVIDER` aus `.env`. Beim Wechsel werden die
-  Modellnamen zurückgesetzt, weil sie nur für den bisherigen Anbieter gelten.
-- **Key:** Im selben Tab → „Neuer API-Key“; er wird für den gewählten Anbieter gespeichert (je Anbieter ein eigener
-  Key). Der Key wird mit libsodium verschlüsselt gespeichert (Schlüssel aus `APP_SECRET`) und nie wieder angezeigt.
-  Steht `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY` bzw. `OPENAI_API_KEY` in `.env.local`, hat dieser
-  Vorrang. „KI-Verbindung testen“
-  prüft Key und Modell des aktiven Anbieters.
+- **Modelle für die Erkennung:** Backend → *Einstellungen* → Tab **KI**. Je Zeile Anbieter, Modell (leer = Standard
+  des Anbieters), „Aktiv“ und optional die Preise in US-Dollar je Million Tokens (Eingabe, Ausgabe mit Denk-Tokens);
+  höchstens 5 Zeilen, hinzufügen und entfernen wie bei den Bildern. **Jede aktive Zeile bestimmt jedes Objekt**, die
+  Anfragen laufen nacheinander (Kosten und Wartezeit wachsen mit jeder Zeile). Die oberste aktive Zeile ist die
+  **Hauptzeile**: Ihr Ergebnis kommt ins Formular, ihr Anbieter übernimmt Duplikat-Vergleich und Übersetzung, ihre
+  Sicherheit zählt für „Automatisch veröffentlichen“. Schlägt sie fehl, kommt das nächste erfolgreiche Ergebnis ins
+  Formular. Ohne Zeilen gilt `AI_PROVIDER` aus `.env` mit dessen Standardmodell. Das Übersetzungsmodell gilt für den
+  Anbieter der Hauptzeile; wechselt der, gilt wieder dessen Standard.
+- **Vergleich in *Prüfen & freigeben*:** Haben mehrere Modelle ein Objekt bestimmt, steht über Fotos und Formular die
+  Tabelle „KI-Vergleich“: Spalten = Modelle mit Sicherheit, Dauer, Tokens und (mit Preisen) Kosten, Zeilen = Felder,
+  abweichende Werte sind markiert; Beschreibung und Notizen per Umschalter. „Übernehmen“ setzt den Vorschlag eines
+  Modells ins Formular (gespeichert sofort, ersetzt nur die Felder der KI; Hinweis, Lagerort, Notizen und Status
+  bleiben, ein Entwurf wird „zu prüfen“, veröffentlicht wird nie automatisch). Gespeichert sind die Ergebnisse der
+  letzten Erkennung je Objekt (`App\Entity\RecognitionResult`), eine neue Erkennung ersetzt sie. Hat sich ein Modell
+  bewährt, die anderen Zeilen auf „Aktiv“ aus stellen.
+- **Keys:** Im selben Tab unter „API-Keys“, je Anbieter ein Feld (mit „Gespeicherten Key entfernen“). Der Key wird
+  mit libsodium verschlüsselt gespeichert (Schlüssel aus `APP_SECRET`) und nie wieder angezeigt. Steht
+  `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY` bzw. `OPENAI_API_KEY` in `.env.local`, hat dieser Vorrang.
+  „KI-Verbindung testen“ prüft Key und Modell jeder aktiven Zeile.
 - **Schnittstelle Gemini:** Gemini Interactions API (seit Juni 2026 Googles Standard), Antwort als JSON nach festem
   Schema, Bilder als Base64, `store: false`.
 - **Schnittstelle Claude:** Messages API, Bilder als Base64. Das JSON-Schema wird als Werkzeug übergeben, das Claude
@@ -367,9 +378,9 @@ sowie eine Übersicht auf dem Dashboard.
 - **Duplikate:** Unter *Einstellungen → KI → Duplikate* lassen sich die Erkennung an- und ausschalten und die
   Schwellen einstellen: „Sicher ab“ (automatisch zuordnen, Standard 85 %) und „Hinweis ab“ (Standard 50 %). Außerdem
   gibt es dort den Schalter „Veröffentlichte Objekte automatisch aktualisieren“ (Standard aus: nur vorschlagen). Der
-  Vergleich nutzt das Modell der Erkennung und kostet einen zusätzlichen Aufruf, aber nur, wenn die Vorauswahl
+  Vergleich nutzt das Modell der Hauptzeile und kostet einen zusätzlichen Aufruf, aber nur, wenn die Vorauswahl
   Kandidaten findet.
-- **Datenschutz:** Nur Objektfotos und Website-Texte gehen an den gewählten Anbieter, keine Besucherdaten. Für Claude,
+- **Datenschutz:** Nur Objektfotos und Website-Texte gehen an die Anbieter der aktiven Zeilen, keine Besucherdaten. Für Claude,
   Mistral und OpenAI gelten deren API-Bedingungen; prüfe sie vor dem Wechsel. Laut den Gemini-Bedingungen
   (Stand 23.03.2026) gelten für Nutzer im EWR, in der Schweiz und in Großbritannien die Datenregeln der bezahlten
   Dienste. Das heißt: keine Nutzung zum Training. Empfohlen ist trotzdem ein Projekt mit Abrechnungskonto.
@@ -488,7 +499,7 @@ migrations/  tests/                Datenbank-Migrationen, PHPUnit- und Playwrigh
 ## 15. Vor dem Livegang
 
 - [ ] **Impressum**, **Datenschutz**, **Barrierefreiheit** unter *Backend → Seiten* vervollständigen
-- [ ] *Einstellungen*: Name der Website, Logo (optional), Name des Sammlers, Kontakt-E-Mail, KI-Anbieter und API-Key, „KI-Verbindung testen“
+- [ ] *Einstellungen*: Name der Website, Logo (optional), Name des Sammlers, Kontakt-E-Mail, Modelle für die Erkennung und API-Keys, „KI-Verbindung testen“
 - [ ] `MAILER_DSN` / `MAILER_FROM` setzen und eine Testnachricht schicken
 - [ ] Gewünschte Sprachen unter *Backend → Sprachen* freischalten
 - [ ] HTTPS, Cronjobs, Backup für Datenbank **und** Medienordner (die Originale liegen in `app_uploads/`)

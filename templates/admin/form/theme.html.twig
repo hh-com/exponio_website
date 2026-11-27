@@ -116,3 +116,61 @@
         </div>
     </div>
 {% endblock %}
+
+{# Zeile „Modelle für die Erkennung“ (Einstellungen → KI, App\Form\Admin\AiRecognizerType): Akkordeon wie
+   collection_entry_row von EasyAdmin (gleiche Klassen, damit Hinzufügen und Löschen funktionieren), immer aufgeklappt.
+   Im Kopf Nummer, Anbieter und Modell; „Hauptzeile“ an der obersten aktiven Zeile (Stand beim Laden der Seite). #}
+{% block ai_recognizer_row %}
+    {% set collection = form_parent(form) %}
+    {% set row = form.vars.data is iterable ? form.vars.data : {} %}
+    {% set number = null %}
+    {% set primary = null %}
+    {% for key, sibling in collection.children %}
+        {% if key == form.vars.name %}{% set number = loop.index %}{% endif %}
+        {% if primary is null and sibling.vars.data is iterable and sibling.vars.data.active|default(false) %}{% set primary = key %}{% endif %}
+    {% endfor %}
+    {% set provider_label = null %}
+    {% for choice in form.provider.vars.choices %}
+        {% if choice.value == row.provider|default(null) %}{% set provider_label = choice.label %}{% endif %}
+    {% endfor %}
+    {% set allows_deleting_items = collection.vars.allow_delete|default(false) %}
+
+    <div class="field-collection-item field-collection-item-complex ai-recognizer-item {{ not form.vars.valid ? 'is-invalid' }}">
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#{{ id }}-contents" aria-controls="{{ id }}-contents" aria-expanded="true">
+                    <twig:ea:Icon name="internal:chevron-right" class="form-collection-item-collapse-marker" />
+                    <span class="ai-recognizer-head">
+                        {%- if number is null or provider_label is null -%}
+                            Neues Modell
+                        {%- else -%}
+                            {{ number }} · {{ provider_label }} · {{ row.model|default('Standardmodell') }}
+                        {%- endif -%}
+                        {% if number is not null and primary == form.vars.name %}
+                            <span class="badge badge-success">Hauptzeile</span>
+                        {% elseif number is not null and not row.active|default(false) %}
+                            <span class="badge badge-secondary">aus</span>
+                        {% endif %}
+                    </span>
+                </button>
+                {% if allows_deleting_items and not disabled %}
+                    <button type="button" class="btn btn-link btn-link-danger field-collection-delete-button" title="Zeile entfernen (beim Speichern)" aria-label="Zeile entfernen">
+                        <twig:ea:Icon name="internal:delete" />
+                    </button>
+                {% endif %}
+            </h2>
+            <div id="{{ id }}-contents" class="accordion-collapse collapse show">
+                <div class="accordion-body">
+                    {{ form_errors(form) }}
+                    <div class="ai-recognizer">
+                        <div class="ai-recognizer__active">{{ form_row(form.active) }}</div>
+                        <div>{{ form_row(form.provider) }}</div>
+                        <div class="ai-recognizer__model">{{ form_row(form.model) }}</div>
+                        <div>{{ form_row(form.priceInput) }}</div>
+                        <div>{{ form_row(form.priceOutput) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use App\Ai\DefaultPrompts;
+use App\Ai\RecognizerConfig;
 use App\Translation\TranslatableInterface;
 use App\Translation\TranslatableTrait;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -25,6 +26,9 @@ class Settings implements TranslatableInterface
 
     /** Mindestgröße eines hochgeladenen Logos (kürzere Seite) in Pixeln */
     public const LOGO_MIN_EDGE = 256;
+
+    /** Höchstzahl Zeilen „Modelle für die Erkennung“ – jede aktive kostet bei jedem Objekt eine Anfrage */
+    public const MAX_RECOGNIZERS = 5;
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -85,15 +89,17 @@ class Settings implements TranslatableInterface
     #[Assert\Range(min: 6, max: 96)]
     private int $itemsPerPage = 24;
 
-    /** KI-Anbieter (App\Ai\AiProvider); leer = AI_PROVIDER aus .env */
-    #[ORM\Column(length: 20, nullable: true)]
-    private ?string $aiProvider = null;
+    /**
+     * Modelle für die Erkennung, je Zeile Anbieter, Modell, aktiv und Preise (App\Ai\RecognizerConfig::toArray()).
+     * Jede aktive Zeile bestimmt jedes Objekt, die oberste aktive ist die Hauptzeile: Ihr Ergebnis kommt ins Formular,
+     * ihr Anbieter übernimmt Duplikat-Vergleich und Übersetzung. Leer = AI_PROVIDER aus .env mit dessen Standardmodell.
+     *
+     * @var list<array<string, mixed>>|null
+     */
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $aiRecognizers = null;
 
-    /** Modell für die Erkennung (des aktiven Anbieters); leer = Standardmodell aus .env */
-    #[ORM\Column(length: 80, nullable: true)]
-    private ?string $aiModel = null;
-
-    /** Modell für Übersetzungen (des aktiven Anbieters); leer = Standardmodell aus .env */
+    /** Modell für Übersetzungen (des Anbieters der Hauptzeile); leer = Standardmodell aus .env */
     #[ORM\Column(length: 80, nullable: true)]
     private ?string $aiTranslationModel = null;
 
@@ -152,8 +158,13 @@ class Settings implements TranslatableInterface
     #[Assert\Range(min: 1, max: 60)]
     private int $messageRetentionMonths = 6;
 
-    /** Nur für das Backend-Formular: neu eingegebener Key (wird nie gespeichert, sondern verschlüsselt übernommen) */
-    private ?string $newApiKey = null;
+    /**
+     * Nur für das Backend-Formular (App\Form\Admin\ApiKeysType): je Anbieter ein neu eingegebener Key oder
+     * „entfernen“. Wird nie gespeichert; SettingsCrudController übernimmt die Keys verschlüsselt.
+     *
+     * @var array<string, mixed>
+     */
+    private array $newApiKeys = [];
 
     public function __construct()
     {
@@ -349,16 +360,59 @@ class Settings implements TranslatableInterface
         return $this;
     }
 
-    public function getAiModel(): ?string
+    /**
+     * Zeilen „Modelle für die Erkennung“ als Arrays (für das Formular, App\Form\Admin\AiRecognizerType).
+     *
+     * @return list<array{provider: string, model: string|null, active: bool, priceInput: float|null, priceOutput: float|null}>
+     */
+    public function getAiRecognizers(): array
     {
-        return $this->aiModel;
+        return array_map(static fn (RecognizerConfig $row): array => $row->toArray(), $this->recognizerConfigs());
     }
 
-    public function setAiModel(?string $aiModel): static
+    /**
+     * Ungültige Zeilen (unbekannter Anbieter) fallen weg, die Reihenfolge bleibt.
+     *
+     * @param iterable<mixed>|null $rows
+     */
+    public function setAiRecognizers(?iterable $rows): static
     {
-        $this->aiModel = null === $aiModel || '' === trim($aiModel) ? null : trim($aiModel);
+        $clean = [];
+        foreach ($rows ?? [] as $row) {
+            $config = \is_array($row) ? RecognizerConfig::fromArray($row) : ($row instanceof RecognizerConfig ? $row : null);
+            if (null !== $config) {
+                $clean[] = $config->toArray();
+            }
+        }
+        $this->aiRecognizers = [] === $clean ? null : $clean;
 
         return $this;
+    }
+
+    /** @return list<RecognizerConfig> alle Zeilen, auch inaktive */
+    public function recognizerConfigs(): array
+    {
+        $rows = [];
+        foreach ($this->aiRecognizers ?? [] as $row) {
+            $config = RecognizerConfig::fromArray($row);
+            if (null !== $config) {
+                $rows[] = $config;
+            }
+        }
+
+        return $rows;
+    }
+
+    /** Oberste aktive Zeile (Hauptzeile), null = keine Zeile eingetragen */
+    public function primaryRecognizer(): ?RecognizerConfig
+    {
+        foreach ($this->recognizerConfigs() as $row) {
+            if ($row->active) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     public function getAiTranslationModel(): ?string
@@ -467,17 +521,21 @@ class Settings implements TranslatableInterface
         }
     }
 
-    public function getAiProvider(): ?string
+    /** Sind Zeilen eingetragen, muss mindestens eine aktiv sein – sonst gäbe es keine Hauptzeile. */
+    #[Assert\Callback]
+    public function validateRecognizers(ExecutionContextInterface $context): void
     {
-        return $this->aiProvider;
-    }
-
-    /** Beim Wechsel im Backend setzt SettingsCrudController::updateEntity() die Modellnamen zurück. */
-    public function setAiProvider(?string $aiProvider): static
-    {
-        $this->aiProvider = null === $aiProvider || '' === trim($aiProvider) ? null : trim($aiProvider);
-
-        return $this;
+        $rows = $this->recognizerConfigs();
+        if (\count($rows) > self::MAX_RECOGNIZERS) {
+            $context->buildViolation(sprintf('Höchstens %d Modelle für die Erkennung.', self::MAX_RECOGNIZERS))
+                ->atPath('aiRecognizers')
+                ->addViolation();
+        }
+        if ([] !== $rows && null === $this->primaryRecognizer()) {
+            $context->buildViolation('Mindestens ein Modell muss aktiv sein. Ohne Zeilen gilt der Standard aus .env.')
+                ->atPath('aiRecognizers')
+                ->addViolation();
+        }
     }
 
     /** Verschlüsselter Key des Anbieters – zum Entschlüsseln App\Ai\AiCredentials verwenden */
@@ -503,26 +561,46 @@ class Settings implements TranslatableInterface
         return $this;
     }
 
-    /** Formularfeld „Neuer API-Key“ – bleibt immer leer */
-    public function getNewApiKey(): ?string
+    /**
+     * Formularfeld „API-Keys“ – bleibt immer leer.
+     *
+     * @return array<string, mixed>
+     */
+    public function getNewApiKeys(): array
     {
-        return null;
+        return [];
     }
 
-    public function setNewApiKey(?string $key): static
+    /** @param array<string, mixed>|null $keys */
+    public function setNewApiKeys(?array $keys): static
     {
-        $this->newApiKey = null === $key || '' === trim($key) ? null : trim($key);
+        $this->newApiKeys = $keys ?? [];
 
         return $this;
     }
 
-    /** Liefert einen im Formular eingegebenen Key genau einmal. */
-    public function takeNewApiKey(): ?string
+    /**
+     * Liefert die im Formular eingegebenen Änderungen genau einmal: Anbieter => neuer Key, oder null = entfernen.
+     *
+     * @return array<string, string|null>
+     */
+    public function takeNewApiKeys(): array
     {
-        $key = $this->newApiKey;
-        $this->newApiKey = null;
+        $changes = [];
+        foreach ($this->newApiKeys as $provider => $entry) {
+            if (!\is_array($entry)) {
+                continue;
+            }
+            $key = \is_string($entry['key'] ?? null) ? trim($entry['key']) : '';
+            if ('' !== $key) {
+                $changes[(string) $provider] = $key;
+            } elseif (true === ($entry['remove'] ?? false)) {
+                $changes[(string) $provider] = null;
+            }
+        }
+        $this->newApiKeys = [];
 
-        return $key;
+        return $changes;
     }
 
     /** Für das Formular: gespeicherter Prompt oder der Standardtext */

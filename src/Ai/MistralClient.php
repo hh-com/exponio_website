@@ -88,7 +88,13 @@ final class MistralClient implements AiClientInterface
             throw new AiException('Unerwartetes Antwortformat.');
         }
 
-        return ['data' => $data, 'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model];
+        $usage = \is_array($body['usage'] ?? null) ? $body['usage'] : [];
+
+        return [
+            'data' => $data,
+            'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model,
+            'usage' => ['input' => AiUsage::sum($usage, 'prompt_tokens'), 'output' => AiUsage::sum($usage, 'completion_tokens')],
+        ];
     }
 
     public function ping(string $model): string

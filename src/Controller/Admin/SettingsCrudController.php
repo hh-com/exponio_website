@@ -10,6 +10,8 @@ use App\Ai\AiCredentials;
 use App\Ai\AiProgress;
 use App\Duplicate\DuplicateDetector;
 use App\Entity\Settings;
+use App\Form\Admin\AiRecognizerType;
+use App\Form\Admin\ApiKeysType;
 use App\Form\Admin\TranslationType;
 use App\Media\BrandAssets;
 use App\Recognition\PromptBuilder;
@@ -25,13 +27,13 @@ use EasyCorp\Bundle\EasyAdminBundle\Field\BooleanField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\ChoiceField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\CollectionField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\EmailField;
+use EasyCorp\Bundle\EasyAdminBundle\Field\Field;
 use EasyCorp\Bundle\EasyAdminBundle\Field\FormField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\IntegerField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\PercentField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\TextareaField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\TextField;
 use Symfony\Component\Form\Extension\Core\Type\FileType;
-use Symfony\Component\Form\Extension\Core\Type\PasswordType;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
@@ -78,8 +80,6 @@ class SettingsCrudController extends AbstractCrudController
             ->remove(Crud::PAGE_EDIT, Action::SAVE_AND_RETURN)
             ->add(Crud::PAGE_EDIT, $tokenRoute('test_ai')->setLabel('KI-Verbindung testen')->setIcon('fa fa-plug-circle-check')
                 ->setHtmlAttributes(['data-ai-progress' => 'KI-Verbindung wird getestet']))
-            ->add(Crud::PAGE_EDIT, $tokenRoute('remove_key')->setLabel('API-Key entfernen')->setIcon('fa fa-key')->asDangerAction()
-                ->displayIf(fn (Settings $s): bool => $this->credentials->hasStored()))
             ->add(Crud::PAGE_EDIT, $tokenRoute('reset_logo')->setLabel('Standardlogo verwenden')->setIcon('fa fa-image')
                 ->displayIf(static fn (Settings $s): bool => null !== $s->getLogoPath()))
             ->add(Crud::PAGE_EDIT, $tokenRoute('reset_prompts')->setLabel('Prompts auf Standard')->setIcon('fa fa-rotate-left')
@@ -120,25 +120,29 @@ class SettingsCrudController extends AbstractCrudController
             ->onlyWhenUpdating();
 
         yield FormField::addTab('KI', 'fa fa-wand-magic-sparkles');
-        yield FormField::addFieldset('KI-Anbieter')->setHelp($this->keyStatus());
-        yield ChoiceField::new('aiProvider', 'Anbieter')
-            ->setChoices(AiProvider::CHOICES)
-            ->allowMultipleChoices(false)
-            ->setFormTypeOption('placeholder', 'Standard aus .env (AI_PROVIDER)')
-            ->setColumns(3)->hideOnIndex()
-            ->setHelp('Gilt für Erkennung, Duplikat-Vergleich und Übersetzung. Beim Wechsel werden eingetragene Modellnamen auf den Standard des neuen Anbieters zurückgesetzt.');
-        yield TextField::new('newApiKey', 'Neuer API-Key')
-            ->setFormType(PasswordType::class)
-            ->setFormTypeOption('always_empty', true)
-            ->setFormTypeOption('attr', ['autocomplete' => 'new-password'])
-            ->setColumns(5)->onlyOnForms()
-            ->setHelp('Nur ausfüllen, um den Key zu setzen oder zu ändern. Er wird für den gewählten Anbieter verschlüsselt gespeichert und nie wieder angezeigt. Gemini: https://aistudio.google.com/apikey, Claude: https://console.anthropic.com/settings/keys, Mistral: https://console.mistral.ai/api-keys, OpenAI: https://platform.openai.com/api-keys – für den Datenschutz jeweils einen bezahlten Tarif verwenden.');
-        yield TextField::new('aiModel', 'Modell für die Erkennung')->setColumns(3)->hideOnIndex()
-            ->setFormTypeOption('attr', ['placeholder' => $this->aiConfig->defaultModel()])
-            ->setHelp('Leer = '.$this->aiConfig->defaultModel());
-        yield TextField::new('aiTranslationModel', 'Modell für Übersetzungen')->setColumns(3)->hideOnIndex()
+        yield FormField::addFieldset('Modelle für die Erkennung')->setHelp($this->recognizerHelp());
+        yield CollectionField::new('aiRecognizers', 'Modelle')
+            ->setEntryType(AiRecognizerType::class)
+            ->setEntryIsComplex()
+            ->renderExpanded()
+            ->allowAdd()
+            ->allowDelete()
+            ->setFormTypeOption('prototype_data', ['active' => true, 'provider' => AiProvider::GEMINI])
+            ->setColumns(12)->onlyOnForms()
+            ->setHelp(sprintf('Höchstens %d Zeilen. Leere Liste = AI_PROVIDER aus .env (%s) mit dessen Standardmodell. Standardmodelle: %s.', Settings::MAX_RECOGNIZERS, AiProvider::label($this->aiProvider->resolve(null)), $this->defaultModels()));
+        yield TextField::new('aiTranslationModel', 'Modell für Übersetzungen')->setColumns(4)->hideOnIndex()
             ->setFormTypeOption('attr', ['placeholder' => $this->aiConfig->defaultTranslationModel()])
-            ->setHelp('Leer = '.$this->aiConfig->defaultTranslationModel());
+            ->setHelp(sprintf('Beim Anbieter der Hauptzeile (%s). Leer = %s. Wechselt der Anbieter, gilt wieder dessen Standard.', AiProvider::label($this->aiProvider->name()), $this->aiConfig->defaultTranslationModel()));
+
+        yield FormField::addFieldset('API-Keys')
+            ->setHelp($this->aiProvider->isFake()
+                ? 'Testmodus: AI_PROVIDER=fake – die KI wird nicht aufgerufen.'
+                : 'Nur ausfüllen, um einen Key zu setzen oder zu ändern. Er wird verschlüsselt gespeichert und nie wieder angezeigt. Für den Datenschutz jeweils einen bezahlten Tarif verwenden.');
+        // Field statt TextField: der Wert ist ein Array (je Anbieter Key und „entfernen“)
+        yield Field::new('newApiKeys', 'API-Keys')
+            ->setFormType(ApiKeysType::class)
+            ->setFormTypeOption('label', false)
+            ->setColumns(12)->onlyOnForms();
 
         yield FormField::addFieldset('Prompts');
         yield TextareaField::new('recognitionPromptText', 'Prompt für die Objekterkennung')
@@ -197,24 +201,23 @@ class SettingsCrudController extends AbstractCrudController
 
     public function updateEntity(EntityManagerInterface $entityManager, $entityInstance): void
     {
-        // Anbieter gewechselt: Modellnamen gelten nur für den bisherigen Anbieter. Hier und nicht im Setter, weil das
-        // Formular die Modellfelder nach dem Anbieter zurückschreibt. Ein gleichzeitig geändertes Modell bleibt.
+        // Anbieter der Hauptzeile gewechselt: Das Übersetzungsmodell gilt nur für den bisherigen Anbieter. Hier und nicht
+        // im Setter, weil das Formular die Felder in beliebiger Reihenfolge schreibt. Ein gleichzeitig geändertes Modell bleibt.
         $original = $entityManager->getUnitOfWork()->getOriginalEntityData($entityInstance);
-        $oldProvider = $this->aiProvider->resolve(\is_string($original['aiProvider'] ?? null) ? $original['aiProvider'] : null);
-        if ($oldProvider !== $this->aiProvider->name()) {
-            if ($entityInstance->getAiModel() === ($original['aiModel'] ?? null)) {
-                $entityInstance->setAiModel(null);
-            }
-            if ($entityInstance->getAiTranslationModel() === ($original['aiTranslationModel'] ?? null)) {
-                $entityInstance->setAiTranslationModel(null);
-            }
+        $oldPrimary = (new Settings())->setAiRecognizers(\is_array($original['aiRecognizers'] ?? null) ? $original['aiRecognizers'] : null)->primaryRecognizer();
+        if ($this->aiProvider->resolve($oldPrimary?->provider) !== $this->aiProvider->name()
+            && $entityInstance->getAiTranslationModel() === ($original['aiTranslationModel'] ?? null)) {
+            $entityInstance->setAiTranslationModel(null);
         }
 
-        $key = $entityInstance->takeNewApiKey();
-        if (null !== $key) {
-            $provider = $this->aiProvider->name();
+        foreach ($entityInstance->takeNewApiKeys() as $provider => $key) {
+            if (!\in_array($provider, AiProvider::CHOICES, true)) {
+                continue;
+            }
             $this->credentials->store($key, $provider);
-            $this->addFlash('success', sprintf('Der %s-API-Key wurde verschlüsselt gespeichert.', AiProvider::label($provider)));
+            $this->addFlash('success', null === $key
+                ? sprintf('Der gespeicherte %s-API-Key wurde entfernt.', AiProvider::label($provider))
+                : sprintf('Der %s-API-Key wurde verschlüsselt gespeichert.', AiProvider::label($provider)));
         }
 
         $oldLogo = $entityInstance->getLogoPath();
@@ -236,6 +239,7 @@ class SettingsCrudController extends AbstractCrudController
         }
     }
 
+    /** Testanfrage an jedes aktive Modell; ein Fehler bei einem hält die anderen nicht auf. */
     #[AdminRoute('/test-ai', name: 'test_ai', options: ['methods' => ['POST']])]
     public function testAi(Request $request, AiClients $clients, AiProgress $progress, SettingsProvider $settings): Response
     {
@@ -244,26 +248,19 @@ class SettingsCrudController extends AbstractCrudController
         $request->getSession()->save();
         if ($this->aiProvider->isFake()) {
             $this->addFlash('warning', 'AI_PROVIDER=fake ist gesetzt – es wird keine echte KI verwendet.');
-        } else {
+
+            return $this->redirectToSettings($settings);
+        }
+        foreach ($this->aiConfig->recognizers() as $row) {
+            $label = AiProvider::label($row->provider);
             try {
-                $progress->step(sprintf('Testanfrage an %s (Modell %s) – warte auf Antwort …', $progress->aiName(), $this->aiConfig->recognitionModel()));
-                $model = $clients->active()->ping($this->aiConfig->recognitionModel());
-                $this->addFlash('success', sprintf('Verbindung zu %s funktioniert (Modell %s).', AiProvider::label($this->aiProvider->name()), $model));
+                $progress->step(sprintf('Testanfrage an %s (Modell %s) – warte auf Antwort …', AiProvider::shortLabel($row->provider), $row->model));
+                $model = $clients->for($row->provider)->ping((string) $row->model);
+                $this->addFlash('success', sprintf('Verbindung zu %s funktioniert (Modell %s).', $label, $model));
             } catch (\Throwable $e) {
-                $this->addFlash('danger', 'Test fehlgeschlagen: '.$e->getMessage());
+                $this->addFlash('danger', sprintf('Test von %s (Modell %s) fehlgeschlagen: %s', $label, $row->model, $e->getMessage()));
             }
         }
-
-        return $this->redirectToSettings($settings);
-    }
-
-    #[AdminRoute('/remove-key', name: 'remove_key', options: ['methods' => ['POST']])]
-    public function removeKey(Request $request, EntityManagerInterface $em, SettingsProvider $settings): Response
-    {
-        $this->checkToken($request, 'remove_key');
-        $this->credentials->store(null);
-        $em->flush();
-        $this->addFlash('success', sprintf('Der gespeicherte %s-API-Key wurde entfernt.', AiProvider::label($this->aiProvider->name())));
 
         return $this->redirectToSettings($settings);
     }
@@ -294,18 +291,25 @@ class SettingsCrudController extends AbstractCrudController
         return $this->redirectToSettings($settings);
     }
 
-    private function keyStatus(): string
+    private function recognizerHelp(): string
     {
-        $provider = $this->aiProvider->name();
-        $label = AiProvider::label($provider);
+        $text = 'Jede aktive Zeile bestimmt jedes Objekt; unter „Prüfen & freigeben“ stehen die Ergebnisse nebeneinander, '
+            .'und du übernimmst das passende. Die oberste aktive Zeile ist die <b>Hauptzeile</b>: Ihr Ergebnis kommt zuerst ins '
+            .'Formular, ihr Anbieter übernimmt Duplikat-Vergleich und Übersetzung. Jede aktive Zeile kostet bei jedem Objekt '
+            .'eine Anfrage, die Anfragen laufen nacheinander. Mit Preisen zeigt die Prüfseite die Kosten je Ergebnis.';
+        foreach ($this->aiConfig->recognizers() as $row) {
+            if (!$this->aiProvider->isFake() && null === $this->credentials->apiKey($row->provider)) {
+                $text .= sprintf(' <b>Für %s ist noch kein API-Key hinterlegt</b> (unten).', htmlspecialchars(AiProvider::label($row->provider)));
+            }
+        }
 
-        return match (true) {
-            $this->aiProvider->isFake() => 'Testmodus: AI_PROVIDER=fake – die KI wird nicht aufgerufen.',
-            AiCredentials::SOURCE_ENV === $this->credentials->source() => sprintf('%s: Der Key kommt aus %s in .env.local (%s) und hat Vorrang.', $label, AiCredentials::envName($provider), $this->credentials->hint()),
-            $this->credentials->isUnreadable() => $label.': Der gespeicherte Key lässt sich nicht mehr entschlüsseln (APP_SECRET wurde geändert). Bitte neu eingeben.',
-            null !== $this->credentials->source() => sprintf('%s: Key hinterlegt, endet auf %s.', $label, $this->credentials->hint()),
-            default => $label.': Noch kein Key hinterlegt – Erkennung und Übersetzung sind erst danach möglich.',
-        };
+        return $text;
+    }
+
+    /** z. B. „Gemini gemini-3.8-flash, Claude claude-sonnet-5-5, …“ */
+    private function defaultModels(): string
+    {
+        return implode(', ', array_map(fn (string $provider): string => AiProvider::shortLabel($provider).' '.$this->aiConfig->defaultModelFor($provider), array_values(AiProvider::CHOICES)));
     }
 
     /** Vorschau des aktuellen Logos auf dem Grund der Logo-Kachel, wie auf der Website */

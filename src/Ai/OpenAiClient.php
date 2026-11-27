@@ -84,7 +84,14 @@ final class OpenAiClient implements AiClientInterface
             throw new AiException('Unerwartetes Antwortformat.');
         }
 
-        return ['data' => $data, 'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model];
+        // output_tokens enthält die Denk-Tokens (output_tokens_details.reasoning_tokens) bereits
+        $usage = \is_array($body['usage'] ?? null) ? $body['usage'] : [];
+
+        return [
+            'data' => $data,
+            'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model,
+            'usage' => ['input' => AiUsage::sum($usage, 'input_tokens'), 'output' => AiUsage::sum($usage, 'output_tokens')],
+        ];
     }
 
     public function ping(string $model): string

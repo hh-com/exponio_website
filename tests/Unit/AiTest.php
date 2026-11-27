@@ -8,6 +8,7 @@ use App\Ai\AiInput;
 use App\Ai\AiProgress;
 use App\Ai\AiProvider;
 use App\Ai\AiRetryStrategy;
+use App\Ai\AiUsage;
 use App\Ai\AnthropicClient;
 use App\Ai\MistralClient;
 use App\Ai\OpenAiClient;
@@ -64,11 +65,51 @@ final class AiTest extends TestCase
         self::assertFalse($provider->isFake());
         self::assertTrue((new AiProvider('FAKE', $settings))->isFake());
 
-        $settings->get()->setAiProvider(AiProvider::ANTHROPIC);
+        $settings->get()->setAiRecognizers([['provider' => AiProvider::ANTHROPIC, 'active' => true]]);
         self::assertSame(AiProvider::ANTHROPIC, $provider->name());
         self::assertSame(AiProvider::GEMINI, $provider->resolve(null), 'keine Auswahl = AI_PROVIDER');
         self::assertSame(AiProvider::GEMINI, $provider->resolve('unbekannt'));
         self::assertSame(AiProvider::ANTHROPIC, (new AiProvider('anthropic', $settings))->resolve(null));
+    }
+
+    public function testRecognizerRowsPrimaryAndCost(): void
+    {
+        $settings = $this->settings();
+        $provider = new AiProvider('mistral', $settings);
+        self::assertSame(AiProvider::MISTRAL, $provider->name(), 'ohne Zeilen gilt AI_PROVIDER');
+
+        $settings->get()->setAiRecognizers([
+            ['provider' => AiProvider::OPENAI, 'model' => 'gpt-test', 'active' => false],
+            ['provider' => 'unbekannt', 'active' => true],
+            ['provider' => ' Anthropic ', 'model' => '  ', 'active' => true, 'priceInput' => '2', 'priceOutput' => '10,5'],
+            ['provider' => AiProvider::GEMINI, 'model' => 'gemini-test', 'active' => true, 'priceInput' => -1],
+        ]);
+        $rows = $settings->get()->recognizerConfigs();
+        self::assertCount(3, $rows, 'unbekannter Anbieter fällt weg');
+        self::assertSame(AiProvider::ANTHROPIC, $provider->name(), 'Hauptzeile = oberste aktive Zeile');
+        self::assertNull($rows[1]->model, 'leeres Modell = Standard');
+        self::assertSame([2.0, 10.5], [$rows[1]->priceInput, $rows[1]->priceOutput]);
+        self::assertNull($rows[2]->priceInput, 'negativer Preis wird verworfen');
+        self::assertEqualsWithDelta(0.0125, $rows[1]->cost(1000, 1000), 1e-9);
+        self::assertNull($rows[2]->cost(1000, 1000), 'ohne Preise keine Kosten');
+        self::assertNull($rows[1]->cost(null, 1000), 'ohne Token-Zahlen keine Kosten');
+
+        $settings->get()->setAiRecognizers([['provider' => AiProvider::GEMINI, 'active' => false]]);
+        self::assertNull($settings->get()->primaryRecognizer());
+        self::assertSame(AiProvider::MISTRAL, $provider->name(), 'ohne aktive Zeile gilt AI_PROVIDER');
+        $settings->get()->setAiRecognizers([]);
+        self::assertSame([], $settings->get()->getAiRecognizers());
+
+        self::assertSame(1200, AiUsage::sum(['a' => 1000, 'b' => '200', 'c' => 'x'], 'a', 'b', 'c'));
+        self::assertNull(AiUsage::sum(['a' => null], 'a', 'fehlt'));
+
+        $settings->get()->setNewApiKeys([
+            AiProvider::GEMINI => ['key' => '  neu  '],
+            AiProvider::ANTHROPIC => ['key' => '', 'remove' => true],
+            AiProvider::MISTRAL => ['key' => '', 'remove' => false],
+        ]);
+        self::assertSame([AiProvider::GEMINI => 'neu', AiProvider::ANTHROPIC => null], $settings->get()->takeNewApiKeys());
+        self::assertSame([], $settings->get()->takeNewApiKeys(), 'nur einmal');
     }
 
     public function testAnthropicRequestAndResponse(): void
@@ -84,6 +125,7 @@ final class AiTest extends TestCase
                     ['type' => 'text', 'text' => 'ignorieren'],
                     ['type' => 'tool_use', 'id' => 't1', 'name' => 'antwort', 'input' => ['title' => 'Bund 1955', 'confidence' => 0.9]],
                 ],
+                'usage' => ['input_tokens' => 100, 'cache_creation_input_tokens' => 2000, 'cache_read_input_tokens' => 0, 'output_tokens' => 321],
             ]));
         }, 'https://api.anthropic.com/v1/');
 
@@ -93,6 +135,7 @@ final class AiTest extends TestCase
 
         self::assertSame(['title' => 'Bund 1955', 'confidence' => 0.9], $result['data']);
         self::assertSame('claude-test-1', $result['model']);
+        self::assertSame(['input' => 2100, 'output' => 321], $result['usage'], 'Eingabe mit Cache-Tokens');
         self::assertSame('POST', $sent['method']);
         self::assertSame('https://api.anthropic.com/v1/messages', $sent['url']);
         self::assertContains('x-api-key: ant-key', $sent['headers']);
@@ -161,6 +204,7 @@ final class AiTest extends TestCase
                     ['type' => 'thought', 'content' => [['type' => 'text', 'text' => 'ignorieren']]],
                     ['type' => 'model_output', 'content' => [['type' => 'text', 'text' => '{"title": "Bund 1955",'], ['type' => 'text', 'text' => ' "confidence": 0.9}']]],
                 ],
+                'usage' => ['total_input_tokens' => 268, 'total_output_tokens' => 20, 'total_thought_tokens' => 22, 'total_tokens' => 310],
             ]));
         }, 'https://generativelanguage.googleapis.com/v1beta/');
 
@@ -168,6 +212,7 @@ final class AiTest extends TestCase
         $result = $client->generateJson('gemini-test', [AiInput::text('Prompt'), AiInput::image('QUJD', 'image/webp')], ['type' => 'object']);
 
         self::assertSame(['title' => 'Bund 1955', 'confidence' => 0.9], $result['data']);
+        self::assertSame(['input' => 268, 'output' => 42], $result['usage'], 'Denk-Tokens zählen zur Ausgabe');
         self::assertSame('POST', $sent['method']);
         self::assertSame('https://generativelanguage.googleapis.com/v1beta/interactions', $sent['url']);
         self::assertContains('x-goog-api-key: test-key', $sent['headers']);
@@ -323,12 +368,12 @@ final class AiTest extends TestCase
         }
 
         $settings = $this->settings();
-        $settings->get()->setAiProvider(AiProvider::MISTRAL);
+        $settings->get()->setAiRecognizers([['provider' => AiProvider::MISTRAL, 'active' => true]]);
         self::assertSame(MistralClient::MAX_IMAGES, (new AiProvider('gemini', $settings))->maxImages());
         self::assertNull((new AiProvider('fake', $settings))->maxImages(), 'Testmodus: keine Grenze');
-        $settings->get()->setAiProvider(AiProvider::ANTHROPIC);
+        $settings->get()->setAiRecognizers([['provider' => AiProvider::ANTHROPIC, 'active' => true]]);
         self::assertNull((new AiProvider('gemini', $settings))->maxImages());
-        $settings->get()->setAiProvider(AiProvider::OPENAI);
+        $settings->get()->setAiRecognizers([['provider' => AiProvider::OPENAI, 'active' => true]]);
         self::assertNull((new AiProvider('gemini', $settings))->maxImages());
         self::assertSame('OpenAI', AiProvider::shortLabel(AiProvider::OPENAI));
     }
@@ -338,7 +383,7 @@ final class AiTest extends TestCase
         $cache = new ArrayAdapter();
         $requests = new RequestStack();
         $settings = $this->settings();
-        $settings->get()->setAiProvider(AiProvider::ANTHROPIC);
+        $settings->get()->setAiRecognizers([['provider' => AiProvider::ANTHROPIC, 'active' => true]]);
         $progress = new AiProgress($requests, $cache, new AiProvider('gemini', $settings));
         self::assertSame('Claude', $progress->aiName());
 

@@ -142,6 +142,11 @@ class Item implements \Stringable, TranslatableInterface
     #[ORM\OrderBy(['uploadedAt' => 'ASC', 'id' => 'ASC'])]
     private Collection $uploads;
 
+    /** @var Collection<int, RecognitionResult> Ergebnisse je Modell bei der letzten Erkennung, Hauptzeile zuerst */
+    #[ORM\OneToMany(targetEntity: RecognitionResult::class, mappedBy: 'item', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OrderBy(['position' => 'ASC', 'id' => 'ASC'])]
+    private Collection $recognitions;
+
     /** Wie oft das Objekt hochgeladen wurde (Anzahl der ItemUpload-Einträge, gespeichert zum Sortieren und Filtern) */
     #[ORM\Column(options: ['default' => 1])]
     private int $uploadCount = 1;
@@ -172,6 +177,7 @@ class Item implements \Stringable, TranslatableInterface
         $this->topics = new ArrayCollection();
         $this->images = new ArrayCollection();
         $this->uploads = new ArrayCollection();
+        $this->recognitions = new ArrayCollection();
         $this->attributeValues = new ArrayCollection();
         $this->translations = new ArrayCollection();
         $this->createdAt = new \DateTimeImmutable();
@@ -467,6 +473,39 @@ class Item implements \Stringable, TranslatableInterface
         }
         $images->removeElement($image);
         $image->setItem(null);
+
+        return $this;
+    }
+
+    // ---- Ergebnisse der Modelle (Einstellungen → KI → Modelle für die Erkennung) ----
+
+    /** @return Collection<int, RecognitionResult> */
+    public function getRecognitions(): Collection
+    {
+        return $this->recognitions;
+    }
+
+    /**
+     * Ersetzt die Ergebnisse der vorigen Erkennung (die alten werden beim Speichern gelöscht).
+     *
+     * @param list<RecognitionResult> $results
+     */
+    public function replaceRecognitions(array $results): static
+    {
+        $this->recognitions->clear();
+        foreach ($results as $result) {
+            $this->recognitions->add($result);
+        }
+
+        return $this;
+    }
+
+    /** Markiert das Ergebnis, das im Formular steht (null = keines). */
+    public function markAppliedRecognition(?RecognitionResult $applied): static
+    {
+        foreach ($this->recognitions as $result) {
+            $result->setApplied($result === $applied);
+        }
 
         return $this;
     }

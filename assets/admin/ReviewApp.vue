@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import AiComparison from './AiComparison.vue'
 import CropEditor from './CropEditor.vue'
 import SearchSelect from './SearchSelect.vue'
 import TopicPicker from './TopicPicker.vue'
@@ -16,7 +17,7 @@ const filter = ref<'all' | 'pending' | 'review' | 'duplicate' | 'error'>('all')
 const currentId = ref<number | null>(null)
 const original = ref<ItemData | null>(null)
 const form = ref<ItemData | null>(null)
-const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate' | 'rotate' | 'crop' | 'delete'>('load')
+const busy = ref<'' | 'load' | 'save' | 'recognize' | 'scan' | 'batch' | 'duplicate' | 'rotate' | 'crop' | 'delete' | 'apply'>('load')
 const batch = ref({ done: 0, total: 0 })
 const errors = ref<Record<string, string>>({})
 const activeImage = ref(0)
@@ -225,7 +226,11 @@ async function recognize(id: number, quiet = false, progress?: AiProgressToast, 
     }
     if (!data.ok) report('danger', `Erkennung fehlgeschlagen: ${data.error}`)
     else if (item.duplicate) report('info', `KI-Vorschlag übernommen. Mögliches Duplikat von #${item.duplicate.id} – bitte entscheiden.`)
-    else report('success', 'KI-Vorschlag übernommen – bitte prüfen.')
+    else if (item.recognitions.results.length > 1) {
+      const applied = item.recognitions.results.find((r) => r.applied)
+      const failed = item.recognitions.results.filter((r) => r.error).length
+      report('success', `${item.recognitions.results.length} Modelle gefragt${failed ? `, ${failed} ohne Ergebnis` : ''}. Im Formular steht der Vorschlag von ${applied?.label ?? 'der Hauptzeile'} – Vergleich oben.`)
+    } else report('success', 'KI-Vorschlag übernommen – bitte prüfen.')
     return data.ok ? 'ok' : 'failed'
   } catch (e) {
     report('danger', (e as Error).message)
@@ -261,6 +266,33 @@ async function recognizeAll() {
   }
   busy.value = ''
   progress.finish(failed ? 'error' : 'success', `${ids.length - failed} von ${ids.length} erkannt${merged ? `, davon ${merged} als Duplikat einem vorhandenen Objekt zugeordnet` : ''}${failed ? `, ${failed} fehlgeschlagen (Filter „Fehler“)` : ''}.`)
+}
+
+/**
+ * Vorschlag eines anderen Modells aus der Vergleichstabelle übernehmen (sofort gespeichert).
+ * Ein ungespeicherter Hinweis an die KI bleibt im Formular stehen.
+ */
+async function applyRecognition(resultId: number) {
+  if (!form.value || busy.value) return
+  const result = form.value.recognitions.results.find((r) => r.id === resultId)
+  const name = result ? `${result.label} (${result.model})` : 'diesem Modell'
+  if (dirtyBesidesHint.value && !confirm(`Der Vorschlag von ${name} überschreibt die Felder. Ungespeicherte Änderungen gehen verloren. Fortfahren?`)) return
+  const id = form.value.id
+  const hint = form.value.aiHint
+  busy.value = 'apply'
+  try {
+    const data = await api.applyRecognition(id, resultId)
+    meta.value = data.meta
+    if (form.value?.id === id) {
+      setItem(data.item)
+      form.value.aiHint = hint
+    }
+    flash('success', `Vorschlag von ${name} übernommen – bitte prüfen.`)
+  } catch (e) {
+    flash('danger', (e as Error).message)
+  } finally {
+    busy.value = ''
+  }
 }
 
 async function decideDuplicate(action: 'keep' | 'replace' | 'separate') {
@@ -642,6 +674,9 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
           </div>
         </section>
 
+        <!-- mehrere Modelle (Einstellungen → KI): Ergebnisse nebeneinander, eines übernehmen -->
+        <AiComparison v-if="form.recognitions.results.length > 1" :comparison="form.recognitions" :busy="!!busy" @apply="applyRecognition" />
+
         <div class="tw:grid tw:gap-5 tw:xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <!-- Bilder + KI -->
           <div class="tw:space-y-4">
@@ -711,7 +746,8 @@ const confidenceColor = (v: number | null) => (v === null ? 'tw:bg-stone-300' : 
               <div class="tw:mt-2 tw:h-2 tw:overflow-hidden tw:rounded-full tw:bg-stone-200">
                 <div class="tw:h-full tw:transition-all" :class="confidenceColor(confidence)" :style="{ width: confidence === null ? '0%' : `${Math.round(confidence * 100)}%` }" />
               </div>
-              <p v-if="form.ai.error" class="tw:mt-3 tw:mb-0 tw:rounded-lg tw:bg-red-50 tw:p-2.5 tw:text-red-700">{{ form.ai.error }}</p>
+              <p v-if="form.ai.model && form.ai.recognizedAt" class="tw:mt-2 tw:mb-0 tw:text-[12px] tw:break-all tw:opacity-70">Modell: {{ form.ai.model }}</p>
+              <p v-if="form.ai.error" class="tw:mt-3 tw:mb-0 tw:rounded-lg tw:bg-red-50 tw:p-2.5 tw:whitespace-pre-line tw:text-red-700">{{ form.ai.error }}</p>
               <p v-if="form.ai.isCollectible === false" class="tw:mt-3 tw:mb-0 tw:rounded-lg tw:bg-amber-50 tw:p-2.5 tw:text-amber-800">Die KI hat kein Sammelobjekt erkannt.</p>
               <p v-if="form.ai.notes" class="tw:mt-3 tw:mb-0 tw:whitespace-pre-line tw:opacity-80">{{ form.ai.notes }}</p>
               <template v-if="form.ai.alternatives.length">

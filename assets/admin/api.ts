@@ -84,6 +84,37 @@ export interface MergedInfo {
   urls: { edit: string; detail: string }
 }
 
+/** Ergebnis eines Modells bei der letzten Erkennung (App\Recognition\RecognitionComparison) */
+export interface RecognitionResultData {
+  id: number
+  provider: string
+  /** Kurzname, z. B. „Claude“ */
+  label: string
+  model: string
+  modelUsed: string | null
+  /** Hauptzeile in den Einstellungen */
+  primary: boolean
+  /** steht im Formular */
+  applied: boolean
+  error: string | null
+  confidence: number | null
+  isCollectible: boolean | null
+  durationMs: number
+  inputTokens: number | null
+  /** einschließlich Denk-Tokens */
+  outputTokens: number | null
+  /** US-Dollar, null ohne Preise in den Einstellungen */
+  cost: number | null
+  /** Zeilenschlüssel => lesbarer Wert */
+  values: Record<string, string | null>
+}
+
+/** Vergleichstabelle: Zeilen = Felder, Spalten = Modelle */
+export interface RecognitionComparison {
+  rows: { key: string; label: string; long: boolean }[]
+  results: RecognitionResultData[]
+}
+
 export interface ItemData {
   id: number
   status: string
@@ -114,6 +145,7 @@ export interface ItemData {
   images: ImageData[]
   duplicate: DuplicateInfo | null
   proposals: Proposal[]
+  recognitions: RecognitionComparison
   ai: { confidence: number | null; model: string | null; recognizedAt: string | null; error: string | null; notes: string | null; alternatives: string[]; isCollectible: boolean | null }
   urls: { edit: string; public: string }
 }
@@ -156,6 +188,8 @@ export function createApi(base: string, csrf: string) {
      * aiHint wird vorher gespeichert und gilt schon für diese Erkennung; ohne aiHint gilt der gespeicherte Hinweis.
      */
     recognize: (id: number, progressId?: string, aiHint?: string | null) => request<{ ok: boolean; error: string | null; item?: ItemData; merged?: MergedInfo; meta: Meta }>(`${base}/${id}/recognize`, aiHint === undefined ? {} : { aiHint }, progressId),
+    /** Vorschlag eines Modells ins Formular übernehmen (ersetzt die KI-Felder, Status bleibt) */
+    applyRecognition: (id: number, resultId: number) => request<{ item: ItemData; meta: Meta }>(`${base}/${id}/recognition/${resultId}`, {}),
     duplicate: (id: number, action: 'keep' | 'replace' | 'separate') => request<{ item?: ItemData; merged?: MergedInfo }>(`${base}/${id}/duplicate`, { action }),
     proposal: (id: number, uploadId: number, action: 'accept' | 'reject') => request<{ item: ItemData }>(`${base}/${id}/proposal/${uploadId}`, { action }),
     images: (id: number, order: number[], remove: number[]) => request<{ item: ItemData }>(`${base}/${id}/images`, { order, delete: remove }),

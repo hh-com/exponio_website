@@ -9,7 +9,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Welcher KI-Anbieter ist aktiv?
  *
  * AI_PROVIDER=fake (Entwicklung und Tests ohne API-Key, ohne Kosten) hat immer Vorrang.
- * Sonst gilt die Auswahl im Backend (Einstellungen → KI), ohne Auswahl der Wert aus AI_PROVIDER.
+ * Sonst gilt der Anbieter der Hauptzeile im Backend (Einstellungen → KI → Modelle für die Erkennung, oberste aktive
+ * Zeile), ohne Zeilen der Wert aus AI_PROVIDER. Er übernimmt Duplikat-Vergleich und Übersetzung; erkannt wird mit
+ * allen aktiven Zeilen (AiConfig::recognizers()).
  */
 final class AiProvider
 {
@@ -44,10 +46,10 @@ final class AiProvider
         return self::FAKE === $this->normalize($this->envProvider);
     }
 
-    /** gemini | anthropic | mistral | openai (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
+    /** Anbieter der Hauptzeile: gemini | anthropic | mistral | openai (bei fake: der Anbieter, der ohne Testmodus gelten würde) */
     public function name(): string
     {
-        return $this->resolve($this->settings->get()->getAiProvider());
+        return $this->resolve($this->settings->get()->primaryRecognizer()?->provider);
     }
 
     /** Wirksamer Anbieter für eine Auswahl im Backend (null = AI_PROVIDER aus .env) */
@@ -78,10 +80,10 @@ final class AiProvider
         };
     }
 
-    /** Höchstzahl Bilder pro Anfrage beim aktiven Anbieter (null = keine feste Grenze) */
-    public function maxImages(): ?int
+    /** Höchstzahl Bilder pro Anfrage beim Anbieter (null = Hauptzeile; Ergebnis null = keine feste Grenze) */
+    public function maxImages(?string $provider = null): ?int
     {
-        return $this->isFake() ? null : (self::MAX_IMAGES[$this->name()] ?? null);
+        return $this->isFake() ? null : (self::MAX_IMAGES[$provider ?? $this->name()] ?? null);
     }
 
     private function normalize(string $value): string

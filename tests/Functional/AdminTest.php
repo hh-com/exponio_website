@@ -2,9 +2,11 @@
 
 namespace App\Tests\Functional;
 
+use App\Ai\AiProvider;
 use App\Entity\Item;
 use App\Entity\ItemImage;
 use App\Entity\ScanJob;
+use App\Entity\Settings;
 use App\Enum\ImageSide;
 use App\Enum\ItemStatus;
 use App\Import\FolderImporter;
@@ -485,6 +487,128 @@ final class AdminTest extends WebTestCase
         $item = $em->find(Item::class, $itemId);
         self::assertNotNull($item);
         self::assertStringNotContainsString('Hinweis des Sammlers', static::getContainer()->get(PromptBuilder::class)->build($item)->text);
+    }
+
+    public function testSeveralModelsAreComparedAndOneCanBeApplied(): void
+    {
+        $this->login();
+        $this->updateSettings(static fn (Settings $s) => $s->setAiRecognizers([
+            ['provider' => AiProvider::GEMINI, 'active' => true],
+            ['provider' => AiProvider::OPENAI, 'model' => 'gpt-test', 'active' => false],
+            ['provider' => AiProvider::ANTHROPIC, 'model' => 'claude-test', 'active' => true, 'priceInput' => 2, 'priceOutput' => 10],
+        ]));
+
+        try {
+            // dasselbe Objekt wie testAiHintIsSavedAndSentWithRecognition(), damit kein weiteres die Website verlässt
+            $item = static::getContainer()->get(EntityManagerInterface::class)->getRepository(Item::class)->findOneBy([], ['id' => 'ASC']);
+            self::assertNotNull($item);
+            $itemId = (int) $item->getId();
+            $crawler = $this->client->request('GET', '/admin/review');
+            $props = json_decode((string) $crawler->filter('#review-app')->attr('data-props'), true);
+            $headers = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_CSRF_TOKEN' => $props['csrf']];
+
+            $this->client->request('POST', $props['api'].'/'.$itemId.'/recognize', server: $headers, content: '{}');
+            self::assertResponseIsSuccessful();
+            $data = json_decode((string) $this->client->getResponse()->getContent(), true);
+            self::assertTrue($data['ok']);
+            $results = $data['item']['recognitions']['results'];
+            self::assertSame([AiProvider::GEMINI, AiProvider::ANTHROPIC], array_column($results, 'provider'), 'nur aktive Zeilen, in ihrer Reihenfolge');
+            self::assertSame([true, false], array_column($results, 'primary'));
+            self::assertSame([true, false], array_column($results, 'applied'), 'die Hauptzeile steht im Formular');
+            self::assertSame('claude-test', $results[1]['model']);
+            self::assertSame(0.42, $data['item']['ai']['confidence']);
+            self::assertSame(0.59, $results[1]['confidence']);
+            self::assertNotSame($results[0]['values']['year'], $results[1]['values']['year'], 'die Fake-Ergebnisse unterscheiden sich');
+            self::assertContains('title', array_column($data['item']['recognitions']['rows'], 'key'));
+            // Kosten aus den Preisen der Zeile; der Fake meldet 1200 + 258 je Foto als Eingabe und 450 als Ausgabe (zweite Zeile)
+            $input = 1200 + 258 * min(4, \count($data['item']['images']));
+            self::assertSame([$input, 450], [$results[1]['inputTokens'], $results[1]['outputTokens']]);
+            self::assertEqualsWithDelta(($input * 2 + 450 * 10) / 1_000_000, $results[1]['cost'], 1e-9);
+            self::assertNull($results[0]['cost'], 'ohne Preise keine Kosten');
+
+            // den Vorschlag des zweiten Modells übernehmen
+            $this->client->request('POST', $props['api'].'/'.$itemId.'/recognition/'.$results[1]['id'], server: $headers, content: '{}');
+            self::assertResponseIsSuccessful();
+            $applied = json_decode((string) $this->client->getResponse()->getContent(), true)['item'];
+            self::assertSame([false, true], array_column($applied['recognitions']['results'], 'applied'));
+            self::assertSame(0.59, $applied['ai']['confidence']);
+            self::assertSame($results[1]['values']['year'], (string) $applied['year']);
+            self::assertSame($results[1]['values']['title'], $applied['title']);
+            self::assertSame('review', $applied['status'], 'Übernehmen veröffentlicht nie automatisch');
+
+            $this->client->request('POST', $props['api'].'/'.$itemId.'/recognition/999999', server: $headers, content: '{}');
+            self::assertResponseStatusCodeSame(404);
+        } finally {
+            $this->updateSettings(static fn (Settings $s) => $s->setAiRecognizers(null));
+        }
+    }
+
+    public function testSettingsStoreModelRowsAndKeysPerProvider(): void
+    {
+        $this->login();
+        $crawler = $this->client->request('GET', '/admin/settings/1/edit');
+        self::assertResponseIsSuccessful();
+        foreach (AiProvider::CHOICES as $provider) {
+            self::assertCount(1, $crawler->filter(sprintf('input[name="Settings[newApiKeys][%s][key]"]', $provider)), 'ein Key-Feld je Anbieter');
+        }
+        $form = $crawler->filter('form[name="Settings"]')->form();
+        $submit = function (array $rows, array $keys = []) use ($form): Crawler {
+            $values = $form->getPhpValues();
+            $values['Settings']['aiRecognizers'] = $rows;
+            $values['Settings']['newApiKeys'] = $keys;
+
+            return $this->client->request('POST', $form->getUri(), $values);
+        };
+
+        try {
+            $submit([
+                ['active' => '1', 'provider' => AiProvider::ANTHROPIC, 'model' => ' claude-test ', 'priceInput' => '2', 'priceOutput' => '10,5'],
+                ['provider' => AiProvider::MISTRAL, 'model' => ''],
+            ], [AiProvider::ANTHROPIC => ['key' => 'ant-geheim-1234']]);
+            self::assertResponseRedirects();
+
+            $settings = $this->freshSettings();
+            $rows = $settings->recognizerConfigs();
+            self::assertCount(2, $rows);
+            self::assertSame([AiProvider::ANTHROPIC, 'claude-test', true, 2.0, 10.5], [$rows[0]->provider, $rows[0]->model, $rows[0]->active, $rows[0]->priceInput, $rows[0]->priceOutput]);
+            self::assertSame([AiProvider::MISTRAL, null, false], [$rows[1]->provider, $rows[1]->model, $rows[1]->active]);
+            self::assertNotNull($settings->getApiKey(AiProvider::ANTHROPIC));
+            self::assertStringNotContainsString('ant-geheim', (string) $settings->getApiKey(AiProvider::ANTHROPIC), 'verschlüsselt gespeichert');
+
+            $crawler = $this->client->request('GET', '/admin/settings/1/edit');
+            self::assertStringContainsString('Hinterlegt, endet auf …1234', $crawler->filter('form[name="Settings"]')->text());
+            self::assertStringContainsString('Hauptzeile', $crawler->filter('.ai-recognizer-item')->first()->text());
+            self::assertCount(1, $crawler->filter('input[name="Settings[newApiKeys][anthropic][remove]"]'));
+
+            // ohne aktive Zeile gäbe es keine Hauptzeile
+            $crawler = $submit([['provider' => AiProvider::GEMINI]]);
+            self::assertFalse($this->client->getResponse()->isRedirect());
+            self::assertStringContainsString('Mindestens ein Modell muss aktiv sein', $crawler->text());
+
+            // Key entfernen
+            $submit([['active' => '1', 'provider' => AiProvider::ANTHROPIC]], [AiProvider::ANTHROPIC => ['key' => '', 'remove' => '1']]);
+            self::assertResponseRedirects();
+            self::assertNull($this->freshSettings()->getApiKey(AiProvider::ANTHROPIC));
+        } finally {
+            $this->updateSettings(static fn (Settings $s) => $s->setAiRecognizers(null)->setApiKey(AiProvider::ANTHROPIC, null));
+        }
+    }
+
+    /** @param callable(Settings): mixed $change */
+    private function updateSettings(callable $change): void
+    {
+        $change($this->freshSettings());
+        static::getContainer()->get(EntityManagerInterface::class)->flush();
+    }
+
+    private function freshSettings(): Settings
+    {
+        $em = static::getContainer()->get(EntityManagerInterface::class);
+        $em->clear();
+        $settings = $em->getRepository(Settings::class)->findOneBy([]);
+        self::assertNotNull($settings);
+
+        return $settings;
     }
 
     private function findImage(int $id): ItemImage

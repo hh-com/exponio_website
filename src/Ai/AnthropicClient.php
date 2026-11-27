@@ -77,7 +77,15 @@ final class AnthropicClient implements AiClientInterface
 
         foreach (\is_array($body['content'] ?? null) ? $body['content'] : [] as $block) {
             if (\is_array($block) && 'tool_use' === ($block['type'] ?? null) && self::TOOL === ($block['name'] ?? null) && \is_array($block['input'] ?? null)) {
-                return ['data' => self::decodeNested($block['input'], $schema), 'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model];
+                $usage = \is_array($body['usage'] ?? null) ? $body['usage'] : [];
+                // Eingabe = ungecacht + in den Cache geschrieben + aus dem Cache gelesen
+                $input = AiUsage::sum($usage, 'input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens');
+
+                return [
+                    'data' => self::decodeNested($block['input'], $schema),
+                    'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model,
+                    'usage' => ['input' => $input, 'output' => AiUsage::sum($usage, 'output_tokens')],
+                ];
             }
         }
 

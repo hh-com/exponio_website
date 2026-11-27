@@ -69,7 +69,14 @@ final class GeminiClient implements AiClientInterface
             throw new AiException('Unerwartetes Antwortformat.');
         }
 
-        return ['data' => $data, 'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model];
+        // Denk-Tokens werden wie Ausgabe berechnet, stehen aber getrennt in total_thought_tokens
+        $usage = \is_array($body['usage'] ?? null) ? $body['usage'] : [];
+
+        return [
+            'data' => $data,
+            'model' => \is_string($body['model'] ?? null) ? $body['model'] : $model,
+            'usage' => ['input' => AiUsage::sum($usage, 'total_input_tokens'), 'output' => AiUsage::sum($usage, 'total_output_tokens', 'total_thought_tokens')],
+        ];
     }
 
     public function ping(string $model): string

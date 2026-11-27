@@ -2,17 +2,21 @@
 
 namespace App\Recognition;
 
+use App\Ai\RecognizerConfig;
 use App\Enum\AttributeType;
 
 /**
  * Liefert plausible Testdaten ohne API-Aufruf (AI_PROVIDER=fake), für Entwicklung und Tests.
+ *
+ * $variant (Stelle der Zeile, 0 = Hauptzeile) ändert Jahr, Merkmale und Sicherheit, damit sich die Ergebnisse
+ * mehrerer Zeilen unter „Prüfen & freigeben“ unterscheiden.
  */
 final class FakeRecognizer implements RecognizerInterface
 {
-    public function recognize(RecognitionRequest $request): array
+    public function recognize(RecognitionRequest $request, RecognizerConfig $config, int $variant = 0): array
     {
         $area = $request->item->getArea() ?? $request->areas[0];
-        $seed = crc32((string) $request->item->getSourceFolder().$request->item->getId());
+        $seed = crc32((string) $request->item->getSourceFolder().$request->item->getId()) + $variant * 7919;
         $year = 1950 + $seed % 60;
 
         $attributes = [];
@@ -40,10 +44,11 @@ final class FakeRecognizer implements RecognizerInterface
 
         return [
             'model' => 'fake',
+            'usage' => ['input' => 1200 + 258 * \count($request->images), 'output' => 400 + 50 * $variant],
             'data' => [
                 'is_collectible' => true,
                 'area' => $area->getAiKey(),
-                'confidence' => 0.42,
+                'confidence' => round(min(0.95, 0.42 + 0.17 * $variant), 2),
                 'title' => sprintf('Testobjekt %d, Sondermarke', $year),
                 'description' => 'Automatisch erzeugte Testbestimmung (AI_PROVIDER=fake). Bitte prüfen und korrigieren.',
                 'meta_description' => sprintf('Testobjekt aus dem Jahr %d – automatisch erzeugte Bestimmung.', $year),

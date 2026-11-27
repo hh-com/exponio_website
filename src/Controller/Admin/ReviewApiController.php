@@ -19,6 +19,7 @@ use App\Media\CropBox;
 use App\Media\ImageCropper;
 use App\Media\ImageRotator;
 use App\Recognition\RecognitionApplier;
+use App\Recognition\RecognitionComparison;
 use App\Recognition\RecognitionService;
 use App\Repository\CategoryRepository;
 use App\Repository\CollectionAreaRepository;
@@ -58,6 +59,7 @@ final class ReviewApiController extends AbstractController
         private readonly AppExtension $app,
         private readonly Packages $packages,
         private readonly ItemRemover $remover,
+        private readonly RecognitionComparison $comparison,
     ) {
     }
 
@@ -200,6 +202,35 @@ final class ReviewApiController extends AbstractController
         }
 
         return $this->json(['ok' => $ok, 'error' => $ok ? null : $item->getAiError(), 'item' => $this->itemData($item), 'meta' => $this->meta()]);
+    }
+
+    /**
+     * Vorschlag eines Modells aus der Vergleichstabelle ins Formular übernehmen. Ersetzt die Felder, die die KI ausfüllt
+     * (wie eine neue Erkennung); Hinweis an die KI, Lagerort, interne Notizen und Status bleiben, ein Entwurf wird „zu prüfen“.
+     */
+    #[Route('/review/{id}/recognition/{resultId}', name: 'review_apply_recognition', requirements: ['id' => '\d+', 'resultId' => '\d+'], methods: ['POST'])]
+    public function applyRecognition(int $id, int $resultId, Request $request, RecognitionApplier $applier): JsonResponse
+    {
+        $this->checkCsrf($request);
+        $item = $this->find($id);
+        $result = null;
+        foreach ($item->getRecognitions() as $candidate) {
+            if ($candidate->getId() === $resultId) {
+                $result = $candidate;
+            }
+        }
+        if (null === $result) {
+            throw new NotFoundHttpException('Kein Ergebnis dieses Modells.');
+        }
+        $data = $result->getData();
+        if (null === $data) {
+            return $this->json(['error' => 'Dieses Modell hat kein Ergebnis geliefert.'], 422);
+        }
+        $applier->apply($item, $data, $result->getModelUsed() ?? $result->getModel(), $this->areas->findActive(), true, $result->getCreatedAt());
+        $item->markAppliedRecognition($result);
+        $this->em->flush();
+
+        return $this->json(['item' => $this->itemData($item), 'meta' => $this->meta()]);
     }
 
     /**
@@ -428,6 +459,7 @@ final class ReviewApiController extends AbstractController
             'images' => array_map($this->imageData(...), $item->getImages()->getValues()),
             'duplicate' => $this->duplicateData($item),
             'proposals' => array_map($this->proposalData(...), array_values(array_filter($item->getUploads()->getValues(), static fn (ItemUpload $u): bool => $u->isProposal()))),
+            'recognitions' => $this->comparison->build($item),
             'ai' => [
                 'confidence' => $item->getAiConfidence(),
                 'model' => $item->getAiModel(),

@@ -250,3 +250,34 @@ a.ps-stat:hover {
   font-size: 1.125rem;
   font-weight: 600;
 }
+
+/* Einstellungen → KI: Zeilen „Modelle für die Erkennung“ (templates/admin/form/theme.html.twig, ai_recognizer_row) */
+.ai-recognizer-head {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.ai-recognizer {
+  display: grid;
+  grid-template-columns: 7rem minmax(10rem, 1fr) minmax(12rem, 1.6fr) minmax(8rem, 0.8fr) minmax(8rem, 0.8fr);
+  gap: 0 1.25rem;
+  align-items: start;
+}
+.ai-recognizer__active {
+  padding-top: 1.9rem;
+}
+@media (max-width: 991.98px) {
+  .ai-recognizer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-recognizer__active { padding-top: 0; grid-column: 1 / -1; }
+  .ai-recognizer__model { grid-column: 1 / -1; }
+}
+
+/* Einstellungen → KI: API-Keys je Anbieter (App\Form\Admin\ApiKeysType) */
+.api-key-entry > .form-widget > .form-widget-compound > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 1.25rem;
+  align-items: start;
+}
