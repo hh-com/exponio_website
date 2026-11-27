@@ -30,6 +30,8 @@ final class ImportTest extends KernelTestCase
         $fs->mkdir([$dir.'/2030-01-02_101500', $dir.'/_tmp_2030-01-02_101600', $dir.'/2030-01-02_101700']);
         $this->writeImage($dir.'/2030-01-02_101500/01.webp');
         $this->writeImage($dir.'/2030-01-02_101500/02.webp');
+        // Notiz, wie sie auch per SFTP kommen könnte: BOM, Windows-Zeilenenden, ein ungültiges Byte
+        $fs->dumpFile($dir.'/2030-01-02_101500/info.txt', "\xEF\xBB\xBF DDR 1953\r\nFalz \xC3(\r\n");
         $this->writeImage($dir.'/_tmp_2030-01-02_101600/01.webp'); // unfertiger Upload – ignorieren
         // 2030-01-02_101700 bleibt leer → Fehler im Protokoll
 
@@ -40,6 +42,7 @@ final class ImportTest extends KernelTestCase
         self::assertSame('2030-01-02_101500', $item->getSourceFolder());
         self::assertCount(2, $item->getImages());
         self::assertSame(ItemStatus::Draft, $item->getStatus());
+        self::assertSame("DDR 1953\nFalz ?(", $item->getAiHint(), 'Notiz aus der App wird zum Hinweis an die KI');
         $image = $item->getImages()->first();
         self::assertInstanceOf(ItemImage::class, $image);
         $mediaDir = $container->getParameter('app.media_dir');

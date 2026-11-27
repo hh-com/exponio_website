@@ -1,0 +1,55 @@
+{% extends '@EasyAdmin/page/content.html.twig' %}
+
+{% block content_title %}App-Zugang{% endblock %}
+
+{% block main %}
+    {% if created %}
+        <p>
+            Der Zugang <strong>„{{ created.label }}“</strong> ist angelegt. Trage diese beiden Angaben in der Exponio-App unter
+            <strong>Einstellungen → Website</strong> ein und tippe auf „Verbindung testen“.
+        </p>
+
+        <div class="ea-not-prose" style="max-width: 46rem">
+            <label class="form-label" for="app-url">Website-Adresse</label>
+            <div class="input-group mb-3">
+                <input id="app-url" class="form-control font-monospace" type="text" value="{{ url }}" readonly>
+                <twig:ea:Button type="button" icon="fa fa-copy" data-copy="app-url">Kopieren</twig:ea:Button>
+            </div>
+
+            <label class="form-label" for="app-token">Token</label>
+            <div class="input-group mb-3">
+                <input id="app-token" class="form-control font-monospace" type="text" value="{{ created.token }}" readonly autocomplete="off" spellcheck="false">
+                <twig:ea:Button type="button" color="primary" icon="fa fa-copy" data-copy="app-token">Kopieren</twig:ea:Button>
+            </div>
+        </div>
+
+        <twig:ea:Alert variant="warning" title="Das Token wird nur jetzt angezeigt.">
+            Die Website speichert nur eine Prüfsumme davon. Geht es verloren, lege einfach einen neuen Zugang an und lösche den alten.
+            Tipp: Öffnest du diese Seite auf dem Handy, kannst du beides direkt in die App kopieren.
+        </twig:ea:Alert>
+
+        <script>
+            document.querySelectorAll('[data-copy]').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const input = document.getElementById(button.dataset.copy)
+                    input.select()
+                    try {
+                        await navigator.clipboard.writeText(input.value)
+                    } catch {
+                        document.execCommand('copy')
+                    }
+                    const label = button.querySelector('.btn-label')
+                    label.textContent = 'Kopiert'
+                    setTimeout(() => { label.textContent = 'Kopieren' }, 2000)
+                })
+            })
+        </script>
+    {% else %}
+        <twig:ea:Alert>
+            Das Token wurde bereits angezeigt und lässt sich nicht noch einmal abrufen.
+            Lege bei Bedarf einen neuen App-Zugang an und lösche den alten.
+        </twig:ea:Alert>
+    {% endif %}
+
+    <p><a href="{{ path('admin_app_token_index') }}">Zu den App-Zugängen</a></p>
+{% endblock %}

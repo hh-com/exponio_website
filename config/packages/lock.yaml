@@ -1,2 +1,8 @@
 framework:
-    lock: '%env(LOCK_DSN)%'
+    lock:
+        resources:
+            default: '%env(LOCK_DSN)%'
+            # Import (app:scan, „Ordner scannen“, Sofortimport nach einem Upload der App, App\Import\FolderImporter):
+            # Webserver und Cronjob müssen dieselbe Sperre sehen. /tmp taugt dafür nicht, Apache und PHP-FPM haben unter
+            # systemd oft ein eigenes (PrivateTmp). Der Ordner entsteht von selbst.
+            import: 'flock://%kernel.project_dir%/var/lock'

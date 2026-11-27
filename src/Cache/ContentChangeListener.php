@@ -2,6 +2,7 @@
 
 namespace App\Cache;
 
+use App\Entity\AppToken;
 use App\Entity\Inquiry;
 use App\Entity\ScanJob;
 use App\Entity\User;
@@ -11,13 +12,13 @@ use Doctrine\ORM\Events;
 
 /**
  * Erhöht nach jedem Speichern von Inhalten die ContentVersion (und leert damit alle Caches).
- * Kontaktnachrichten, Scan-Protokoll und Benutzer zählen nicht als Inhalt.
+ * Kontaktnachrichten, Scan-Protokoll, Benutzer und App-Zugänge zählen nicht als Inhalt.
  */
 #[AsDoctrineListener(event: Events::onFlush)]
 #[AsDoctrineListener(event: Events::postFlush)]
 final class ContentChangeListener
 {
-    private const IGNORED = [Inquiry::class, ScanJob::class, User::class];
+    private const IGNORED = [AppToken::class, Inquiry::class, ScanJob::class, User::class];
 
     private bool $changed = false;
 

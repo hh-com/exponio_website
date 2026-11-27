@@ -14,8 +14,10 @@ use App\Repository\ScanJobRepository;
 use App\Service\SettingsProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Target;
 use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 
 /**
  * Importiert neue Upload-Ordner der Exponio-App: ein Ordner = ein Objekt (Entwurf) mit einem Upload-Eintrag.
@@ -26,13 +28,22 @@ use Symfony\Component\Filesystem\Filesystem;
  * Das neue Objekt ist für die Duplikatprüfung vorgemerkt (DuplicateStatus::Pending): Nach der KI-Erkennung
  * prüft App\Duplicate\DuplicateDetector, ob es das Objekt schon gibt, und ordnet den Upload dann dem vorhandenen zu.
  *
- * Die App legt Ordner erst unter "_tmp_<name>" an und benennt sie nach vollständiger Prüfung
- * atomar in "<YYYY-MM-DD_HHMMSS>" (ggf. mit "_2") um. Es werden nur fertige Ordner importiert.
+ * Uploads der App landen erst unter "_tmp_<name>" und werden nach vollständiger Prüfung atomar in
+ * "<YYYY-MM-DD_HHMMSS>" (ggf. mit "_2") umbenannt (App\Import\UploadInbox). Es werden nur fertige Ordner importiert.
+ * Eine Notiz aus der App ("info.txt") wird zum Hinweis an die KI des neuen Objekts.
+ *
+ * Importe laufen nie gleichzeitig (Sperre „import“ in config/packages/lock.yaml): Cronjob, „Ordner scannen“ und der
+ * Sofortimport nach einem Upload der App (App\EventSubscriber\AppUploadImportSubscriber) könnten sonst denselben Ordner
+ * zweimal importieren – der zweite Versuch scheitert am Scan-Protokoll und räumte dabei die Webbilder des ersten ab.
  */
 final class FolderImporter
 {
     public const FOLDER_PATTERN = '/^\d{4}-\d{2}-\d{2}_\d{6}(_\d+)?$/';
+    /** Notiz zur Fotogruppe aus der App (UTF-8), siehe UploadInbox::NOTE_FILE */
+    public const NOTE_FILE = 'info.txt';
     private const IMAGE_PATTERN = '/\.(webp|jpe?g|png|avif)$/i';
+    /** Mehr nimmt die App-Schnittstelle nicht an (UploadInbox::MAX_NOTE_SIZE); größere Dateien werden nur angelesen */
+    private const MAX_NOTE_BYTES = 65536;
 
     public function __construct(
         private readonly string $scanDir,
@@ -42,6 +53,8 @@ final class FolderImporter
         private readonly SettingsProvider $settings,
         private readonly MediaStorage $media,
         private readonly LoggerInterface $logger,
+        #[Target('import')]
+        private readonly LockFactory $locks,
     ) {
     }
 
@@ -69,27 +82,42 @@ final class FolderImporter
     }
 
     /**
+     * Importiert neue Ordner. Läuft schon ein Import, wird auf ihn gewartet; danach ist ein Ordner, den er übernommen
+     * hat, nicht mehr neu.
+     *
+     * @param string|null $only nur diesen Ordner, falls er neu ist (Sofortimport nach einem Upload der App)
+     *
      * @return array{imported: list<Item>, failed: array<string, string>}
      */
-    public function importNew(int $limit = 50): array
+    public function importNew(int $limit = 50, ?string $only = null): array
     {
-        $result = ['imported' => [], 'failed' => []];
-        foreach (\array_slice($this->findNewFolders(), 0, $limit) as $folder) {
-            try {
-                $result['imported'][] = $this->importFolder($folder);
-            } catch (\Throwable $e) {
-                $this->logger->error('Import von {folder} fehlgeschlagen: {message}', ['folder' => $folder, 'message' => $e->getMessage(), 'exception' => $e]);
-                $result['failed'][$folder] = $e->getMessage();
-                if (!$this->em->isOpen()) {
-                    throw $e;
-                }
-                $this->em->clear();
-                $this->em->persist(new ScanJob($folder, ScanStatus::Failed, 0, null, $e->getMessage()));
-                $this->em->flush();
+        $lock = $this->locks->createLock('app-import', 1800);
+        $lock->acquire(true);
+        try {
+            $folders = $this->findNewFolders();
+            if (null !== $only) {
+                $folders = \in_array($only, $folders, true) ? [$only] : [];
             }
-        }
+            $result = ['imported' => [], 'failed' => []];
+            foreach (\array_slice($folders, 0, $limit) as $folder) {
+                try {
+                    $result['imported'][] = $this->importFolder($folder);
+                } catch (\Throwable $e) {
+                    $this->logger->error('Import von {folder} fehlgeschlagen: {message}', ['folder' => $folder, 'message' => $e->getMessage(), 'exception' => $e]);
+                    $result['failed'][$folder] = $e->getMessage();
+                    if (!$this->em->isOpen()) {
+                        throw $e;
+                    }
+                    $this->em->clear();
+                    $this->em->persist(new ScanJob($folder, ScanStatus::Failed, 0, null, $e->getMessage()));
+                    $this->em->flush();
+                }
+            }
 
-        return $result;
+            return $result;
+        } finally {
+            $lock->release();
+        }
     }
 
     public function importFolder(string $folder): Item
@@ -112,6 +140,7 @@ final class FolderImporter
         $item->setSourceFolder($folder);
         $item->setArea($this->settings->get()->getDefaultScanArea() ?? ($this->areas->findActive()[0] ?? null));
         $item->setDuplicateStatus(DuplicateStatus::Pending);
+        $item->setAiHint($this->readNote($dir, $folder));
         $item->addUpload(new ItemUpload($item, $folder));
 
         $stored = [];
@@ -161,6 +190,30 @@ final class FolderImporter
         }
 
         return true;
+    }
+
+    /**
+     * Notiz aus der App als Hinweis an die KI: höchstens Item::AI_HINT_MAX Zeichen (der Rest bleibt in info.txt),
+     * ungültiges UTF-8 wird ersetzt statt abgelehnt (Ordner können auch per SFTP kommen).
+     */
+    private function readNote(string $dir, string $folder): ?string
+    {
+        $path = $dir.'/'.self::NOTE_FILE;
+        if (!is_file($path)) {
+            return null;
+        }
+        $text = @file_get_contents($path, false, null, 0, self::MAX_NOTE_BYTES);
+        if (false === $text) {
+            $this->logger->warning('Notiz {file} lässt sich nicht lesen.', ['file' => $folder.'/'.self::NOTE_FILE]);
+
+            return null;
+        }
+        $text = trim(str_replace(["\r\n", "\r"], "\n", mb_scrub(preg_replace('/^\xEF\xBB\xBF/', '', $text) ?? '', 'UTF-8')));
+        if (mb_strlen($text) > Item::AI_HINT_MAX) {
+            $this->logger->notice('Notiz {file} ist länger als {max} Zeichen und wurde für den Hinweis an die KI gekürzt.', ['file' => $folder.'/'.self::NOTE_FILE, 'max' => Item::AI_HINT_MAX]);
+        }
+
+        return '' === $text ? null : $text;
     }
 
     private function folderLabel(string $folder): string

@@ -12,6 +12,14 @@ security:
         dev:
             pattern: ^/(_profiler(/|$)|(_wdt|assets|build|media)/)
             security: false
+        # Exponio-App: Upload-Schnittstelle mit Bearer-Token (Backend → System → App-Zugänge), ohne Session und Cookies
+        app_api:
+            pattern: ^/api/app/
+            stateless: true
+            access_token:
+                token_handler: App\Security\AppTokenHandler
+                failure_handler: App\Security\AppApiAuthentication
+            entry_point: App\Security\AppApiAuthentication
         main:
             lazy: true
             provider: app_user_provider
@@ -33,6 +41,7 @@ security:
     access_control:
         - { path: ^/admin/login$, roles: PUBLIC_ACCESS }
         - { path: ^/admin, roles: ROLE_ADMIN }
+        - { path: ^/api/app/, roles: ROLE_APP_UPLOAD }
 
 when@test:
     security:

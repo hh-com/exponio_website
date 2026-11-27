@@ -129,6 +129,7 @@ class DashboardController extends AbstractDashboardController
             ->setLinkTarget('_blank');
 
         yield MenuItem::section('System');
+        yield MenuItem::linkTo(AppTokenCrudController::class, 'App-Zugänge', 'fa fa-mobile-screen');
         yield MenuItem::linkTo(ScanJobCrudController::class, 'Scan-Protokoll', 'fa fa-folder-open');
         yield MenuItem::linkTo(UserCrudController::class, 'Benutzer', 'fa fa-user-shield');
     }

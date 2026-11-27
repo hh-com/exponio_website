@@ -21,3 +21,10 @@ admin:
         path: ../src/Controller/Admin/
         namespace: App\Controller\Admin
     type: attribute
+
+# Upload-Schnittstelle für die Exponio-App (/api/app/v1/…, Anmeldung per Token)
+api:
+    resource:
+        path: ../src/Controller/Api/
+        namespace: App\Controller\Api
+    type: attribute

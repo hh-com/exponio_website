@@ -114,7 +114,7 @@ Bild-Hashes der vorhandenen Fotos und markiert mögliche Duplikate im Bestand.
 
 ```
 domain/
-├── app_uploads/   ← die App lädt hierher hoch (ein Ordner je Objekt) – wird von Updates nie berührt
+├── app_uploads/   ← hier legt die Website die Uploads der App ab (ein Ordner je Objekt) – wird von Updates nie berührt
 ├── media/         ← erzeugte Webbilder (empfohlen außerhalb des Projektordners)
 └── live/          ← dieses Projekt (Document Root: live/public)
     └── public/media → ../../media   (Symlink)
@@ -164,9 +164,56 @@ Ohne Paket geht es auch direkt auf dem Server: `php composer.phar install --no-d
 Beim Update **nicht überschreiben:** `.env.local`, `var/`, `public/media` (bzw. den Symlink).
 Beim **ersten** Update auf diese Version zusätzlich `rm -rf var/share/prod/http_cache` ausführen.
 
-- Schreibrechte für den Webserver: `var/` und den Medienordner. Leserechte auf `app_uploads/`.
+- Schreibrechte für den Webserver: `var/`, den Medienordner und `app_uploads/` (dort legt die App-Schnittstelle neue Ordner an).
 - OPcache aktivieren (`opcache.enable=1`, optional `opcache.preload=config/preload.php`).
 - Logs: `var/log/prod-JJJJ-MM-TT.log` (14 Tage). Webserver-Logs kurz halten (z. B. 7 Tage) und IPs kürzen.
+
+### App-Zugang (Upload-Schnittstelle)
+
+Die Exponio-App lädt direkt in die Website hoch. Sie kennt nur die Adresse der Website und ein Token; die Website legt
+die Fotos selbst im Upload-Ordner (`SCAN_DIR`) ab. FTP- oder SSH-Zugänge für die App braucht es nicht.
+
+1. **Backend → System → App-Zugänge → Neuer App-Zugang**, Gerät benennen (z. B. „Pixel 10“), „Token erzeugen“.
+2. Die Seite danach zeigt **Website-Adresse** und **Token** zum Kopieren, das Token nur dieses eine Mal. Gespeichert
+   wird nur sein SHA-256-Hash. Am einfachsten öffnest du das Backend dafür auf dem Handy und kopierst beides in die
+   App (*Einstellungen → Website*), dann „Verbindung testen“.
+3. Pro Gerät ein eigener Zugang. **Löschen** sperrt das Gerät sofort. Die Liste zeigt, wann ein Zugang zuletzt
+   benutzt wurde.
+
+Voraussetzungen auf dem Server: **HTTPS** mit gültigem Zertifikat (die App verbindet sich nur so und folgt keinen
+Weiterleitungen, also die endgültige Adresse eintragen, z. B. ohne `www.`), **Schreibrechte** des Webservers auf
+`app_uploads/` (fehlt der Ordner, legt die Website ihn an) und die Kopfzeile `Authorization` muss bei PHP ankommen
+(`public/.htaccess` erledigt das für Apache, auch mit PHP-FPM/CGI; ohne `.htaccess` im VirtualHost `CGIPassAuth On`
+setzen; nginx reicht sie ohnehin durch). Fotos sind je nach Einstellung der App meist unter 5 MB, die Schnittstelle
+nimmt bis 64 MB pro Datei an. Das Upload-Limit des Webservers (nginx `client_max_body_size`, Beispiel unten) muss dazu
+passen; `post_max_size` von PHP gilt hier nicht, weil die Dateien per `PUT` kommen. Die Adresse auf der Token-Seite
+beginnt immer mit `https://`, auch hinter einem TLS-Proxy; stimmen Host oder Pfad dort nicht, `SYMFONY_TRUSTED_PROXIES`
+(und bei Bedarf `SYMFONY_TRUSTED_HEADERS`) in `.env.local` setzen.
+
+Schnittstelle (`src/Controller/Api/AppUploadController.php`, Logik in `src/Import/UploadInbox.php`), Anmeldung mit
+`Authorization: Bearer <Token>`, Antworten immer JSON:
+
+| Anfrage | Zweck |
+|---|---|
+| `GET /api/app/v1/status[?writeTest=1]` | Token und Upload-Ordner prüfen (mit `writeTest` ein echter Schreibtest) |
+| `GET /api/app/v1/uploads/{id}` | Dateien eines offenen Uploads, damit die App nach einem Abbruch nur Fehlendes sendet |
+| `PUT /api/app/v1/uploads/{id}/files/{name}` | eine Datei, Body = Inhalt, Kopfzeile `X-Content-SHA256` |
+| `POST /api/app/v1/uploads/{id}/complete` | `{"files": [{"name", "size", "sha256"}, …]}` → prüfen und als fertigen Ordner freigeben |
+
+`{id}` ist der Zeitstempel der App (`2026-11-20_211530`), `{name}` ist `01.webp`, `02.jpg` … oder `info.txt` (Notiz,
+UTF-8, höchstens 64 KB). Jede Datei wird gegen Größe und Prüfsumme geprüft, Bilder zusätzlich darauf, dass Inhalt und
+Endung zusammenpassen; alles andere lehnt die Website ab. Die Dateien sammeln sich in `_tmp_<id>/`, erst „complete“
+benennt den Ordner atomar in `<id>` um (bei Kollision `<id>_2` usw., auch Namen aus dem Scan-Protokoll werden nie
+wiederverwendet). Ein wiederholtes „complete“ findet den fertigen Ordner am Inhalt wieder. Fehler kommen als
+`{"error": {"code": "…", "message": "…"}}` mit stabilem Code (`src/Import/UploadInboxException.php`, `AUTH_FAILED`
+für fehlende oder ungültige Tokens). Außerhalb der eigenen `_tmp_`-Ordner löscht oder überschreibt die Schnittstelle
+nichts.
+
+Direkt nach der Antwort auf „complete“ importiert die Website den fertigen Ordner als Entwurf
+(`src/EventSubscriber/AppUploadImportSubscriber.php`), ohne auf den Cronjob zu warten; KI-Erkennung und
+Duplikatprüfung übernimmt weiter `app:scan`, freigegeben wird von Hand. Mit PHP-FPM bekommt die App die Antwort sofort,
+mit mod_php erst nach dem Import. Importe laufen nie gleichzeitig: Die Sperre liegt in `var/lock/`, weil Webserver und
+Cronjob unter systemd oft verschiedene `/tmp`-Ordner haben.
 
 ### Cronjobs
 
@@ -187,7 +234,7 @@ Für nginx:
 server {
     server_name deine-domain.de;
     root /var/www/live/public;
-    client_max_body_size 30M;
+    client_max_body_size 64M;   # Fotos der App (bis 64 MB pro Datei, App\Import\UploadInbox)
     gzip on; gzip_types text/css application/javascript application/json image/svg+xml text/plain application/xml text/markdown;
 
     location / { try_files $uri /index.php$is_args$args; }
@@ -209,10 +256,13 @@ server {
 
 ## 6. Ablauf: App → Website
 
-1. In der App Fotos **eines** Objekts aufnehmen und hochladen. Die App schreibt nach `app_uploads/2026-11-20_211530/01.webp …`
-   und benennt den Ordner erst nach vollständigem Upload um. Unfertige `_tmp_…`-Ordner werden ignoriert.
-2. `app:scan` (Cron) oder **Backend → Prüfen & freigeben → „Ordner scannen“** importiert neue Ordner als Entwurf.
-   Die Webbilder entstehen dabei ohne Metadaten (kein EXIF, keine GPS-Position) und mit Inhalts-Hash im Dateinamen.
+1. In der App Fotos **eines** Objekts aufnehmen und hochladen (Einrichtung: Abschnitt 5, „App-Zugang“). Die Website legt
+   sie unter `app_uploads/2026-11-20_211530/01.webp …` ab, eine Notiz aus der App als `info.txt`, und gibt den Ordner
+   erst nach vollständigem, geprüftem Upload frei. Unfertige `_tmp_…`-Ordner werden ignoriert.
+2. Die Website importiert den Ordner direkt nach dem Upload als Entwurf; andere neue Ordner (z. B. per SFTP) importiert
+   `app:scan` (Cron) oder **Backend → Prüfen & freigeben → „Ordner scannen“**. Die Notiz aus `info.txt` wird zum
+   **Hinweis an die KI** des Objekts (höchstens 2000 Zeichen, im Formular änderbar). Die Webbilder entstehen dabei ohne
+   Metadaten (kein EXIF, keine GPS-Position) und mit Inhalts-Hash im Dateinamen.
 3. Gemini bestimmt Objektart, Land, Jahr, Serie, Themen, Merkmale, Titel, Beschreibung, **Mängel**, **Seite und
    Alt-Text je Foto** sowie einen Schätzwert. Der Status ist danach *Zu prüfen*.
 4. **Duplikat-Erkennung:** Direkt danach prüft die Website, ob es das Objekt schon gibt.
@@ -364,6 +414,8 @@ und `ETag`.
   `prefers-reduced-motion`). Geprüft mit axe (Playwright) auf allen Seitentypen.
 - **Sicherheitsheader:** Content-Security-Policy ohne Inline-Skripte, HSTS (bei HTTPS), Referrer-Policy,
   Permissions-Policy, `X-Content-Type-Options`, `X-Frame-Options`.
+- **App-Schnittstelle:** eigene Firewall ohne Session und Cookies (`app_api` in `config/packages/security.yaml`), Tokens
+  mit 256 Bit Zufall, gespeichert nur als SHA-256-Hash, je Gerät widerrufbar. Die App spricht nur HTTPS.
 
 ---
 
@@ -411,10 +463,11 @@ src/
   Routing/FrontRouteLoader.php     /de/… mit deutschen Pfaden, /{sprache}/… für alle anderen
   Cache/                           ContentVersion, ContentCache, ContentChangeListener, DeployCacheClearer
   Seo/                             SitemapBuilder, LlmsTxtBuilder
-  EventSubscriber/                 Sprache prüfen, Cache-Header, Sicherheitsheader
-  Catalog/  Import/  Media/        Katalogsuche, Ordner-Import, Webbilder
+  EventSubscriber/                 Sprache prüfen, Cache-Header, Sicherheitsheader, JSON-Fehler und Sofortimport der App-Schnittstelle
+  Security/                        Token-Prüfung der App-Schnittstelle (AppTokenHandler, AppApiAuthentication)
+  Catalog/  Import/  Media/        Katalogsuche, Ordner-Import und Upload-Annahme der App (UploadInbox), Webbilder
   Entity/  Repository/  Command/   Datenmodell, Abfragen, Konsolenbefehle
-  Controller/Front|Site|Admin      Website, Sitemaps/robots/llms.txt, Backend
+  Controller/Front|Site|Admin|Api  Website, Sitemaps/robots/llms.txt, Backend, Upload-Schnittstelle der App
 templates/  translations/          Twig-Vorlagen, Oberflächentexte (de, en)
 migrations/  tests/                Datenbank-Migrationen, PHPUnit- und Playwright-Tests
 ```
@@ -435,6 +488,7 @@ migrations/  tests/                Datenbank-Migrationen, PHPUnit- und Playwrigh
 - [ ] `MAILER_DSN` / `MAILER_FROM` setzen und eine Testnachricht schicken
 - [ ] Gewünschte Sprachen unter *Backend → Sprachen* freischalten
 - [ ] HTTPS, Cronjobs, Backup für Datenbank **und** Medienordner (die Originale liegen in `app_uploads/`)
+- [ ] *System → App-Zugänge*: Zugang fürs Handy anlegen, in der App eintragen und „Verbindung testen“
 
 ## Lizenz
 
